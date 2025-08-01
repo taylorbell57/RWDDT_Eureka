@@ -1,0 +1,53 @@
+name: Docker Build and Eureka Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docker-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t rwddt_eureka:test .
+
+      - name: Smoke test - Jupyter Lab is available?
+        run: |
+          docker run --rm --entrypoint "" rwddt_eureka:test jupyter lab --version
+
+      - name: Smoke test - Eureka! is available?
+        run: |
+          docker run --rm --entrypoint "" rwddt_eureka:test \
+            python -c "import eureka; print(eureka.__version__)"
+
+      - name: Extract Eureka commit hash
+        id: eureka
+        run: |
+          COMMIT=$(grep -oP "Eureka\.git@[\w\d]+" Dockerfile | sed 's/.*@//')
+          if [ -z "$COMMIT" ]; then
+            echo "Could not extract commit from Dockerfile"
+            exit 1
+          fi
+          echo "EUREKA_COMMIT=$COMMIT" >> $GITHUB_ENV
+
+      - name: Run Eureka test suite inside Docker
+        run: |
+          docker run --rm \
+            --mount type=tmpfs,destination=/home/rwddt/crds_cache \
+            --entrypoint "" \
+            rwddt_eureka:test \
+            bash -c "
+              git clone --branch tjb_rwddt https://github.com/kevin218/Eureka.git /home/rwddt/Eureka && \
+              cd /home/rwddt/Eureka && \
+              git checkout ${EUREKA_COMMIT} && \
+              pip install --no-deps --editable . && \
+              pytest -x -v --tb=long --capture=no tests"
+        env:
+          EUREKA_COMMIT: ${{ env.EUREKA_COMMIT }}

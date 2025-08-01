@@ -1,0 +1,41 @@
+# Jupyter notebook metadata
+**/.ipynb_checkpoints/
+
+# Python cache and compiled files
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments and pip artifacts
+.env
+.venv/
+*.egg-info/
+Pipfile.lock
+poetry.lock
+
+# macOS and Windows system files
+.DS_Store
+Thumbs.db
+
+# Editor folders and temporary files
+.vscode/
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Local data and mounted volumes (do not track user-generated results)
+data/
+notebooks/
+crds_cache/
+analysis/
+
+# Docker-related overrides and deployment files
+docker-compose.yml
+
+# Build artifacts
+dist/
+build/
+*.log
+

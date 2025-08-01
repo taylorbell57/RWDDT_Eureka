@@ -1,0 +1,34 @@
+# Template for RW-DDT Jupyter container
+# Replace <rootdir>, <planet>, <visit>, and <analyst> with your specific values.
+# Do not commit this file after filling in paths — keep user-specific versions local.
+
+version: "3.8"
+
+services:
+  rwddt_eureka:
+    image: tbell664/rwddt_eureka:latest
+
+    # Customize this to avoid conflicts, e.g. rwddt_toi1234_v01_alice
+    container_name: rwddt_<planet>_<visit>_<analyst>
+
+    ports:
+      - "0:8888"
+
+    volumes:
+      # Analyst-specific folders (rw)
+      - /<rootdir>/<planet>/<visit>/<analyst>:/home/rwddt/analysis
+      - /<rootdir>/<planet>/<visit>/<analyst>/notebooks:/home/rwddt/notebooks
+
+      # Shared input data (ro)
+      - /grp/crds/cache:/home/rwddt/crds_cache:ro
+      - /<rootdir>/<planet>/<visit>/MAST_Stage1:/home/rwddt/MAST_Stage1:ro
+      - /<rootdir>/<planet>/<visit>/Uncalibrated:/home/rwddt/Uncalibrated:ro
+
+      # Docker socket for host port detection
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    environment:
+      - TZ=America/New_York
+      - CONDA_ENV=base
+
+    restart: unless-stopped
