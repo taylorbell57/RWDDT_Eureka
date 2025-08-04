@@ -38,41 +38,22 @@ SERVER_IP=$(hostname -I | cut -d' ' -f1)
 eval "$(conda shell.bash hook)"
 conda activate "${CONDA_ENV:-base}"
 
-# Launch Jupyter in background to capture the token
-echo "Starting Jupyter Lab server in background to capture token..."
-jupyter lab --ip=0.0.0.0 --no-browser --notebook-dir=/home/rwddt/notebooks &
-JUPYTER_PID=$!
-
-# Wait for the server to start and emit a URL
-for i in {1..30}; do
-  TOKEN_URL=$(jupyter lab list 2>/dev/null | grep -o "http://.*token=[a-zA-Z0-9\-]+") || true
-  if [[ -n "$TOKEN_URL" ]]; then
-    break
-  fi
-  sleep 1
-done
-
-if [[ -z "$TOKEN_URL" ]]; then
-  echo "Warning: Unable to retrieve Jupyter token URL. Server may not have started yet."
-  echo "You can run 'jupyter lab list' manually inside the container to find it."
-else
-  # Rewrite the token URL with external IP and mapped port
-  TOKEN_URL="http://${SERVER_IP}:${HOST_PORT}${TOKEN_URL#http://127.0.0.1:8888}"
-fi
+# Generate a secure random token
+TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')
 
 GREEN='\033[1;32m'
 NC='\033[0m' # No color
 
-echo -e "${GREEN}============================================================"
+echo -e "${GREEN}============================================================================="
 echo " Jupyter Lab is starting!"
 echo ""
-if [[ -n "$TOKEN_URL" ]]; then
-  echo " Access it at: $TOKEN_URL"
-else
-  echo " Access it at: http://${SERVER_IP}:${HOST_PORT}"
-fi
-echo -e "============================================================${NC}"
+echo " Access it at: http://localhost:${HOST_PORT}/?token=${TOKEN}"
+echo -e "=============================================================================${NC}"
 echo ""
 
-# Wait for the background Jupyter process to take over (PID 1)
-wait $JUPYTER_PID
+# Launch Jupyter in the foreground as PID 1 so logs stream properly
+exec jupyter lab \
+  --ip=0.0.0.0 \
+  --no-browser \
+  --notebook-dir=/home/rwddt/ \
+  --ServerApp.token="${TOKEN}"

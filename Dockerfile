@@ -36,10 +36,10 @@ RUN apt-get purge -y build-essential && \
 RUN mkdir -p /opt/default_notebooks && \
     git clone --filter=blob:none https://github.com/taylorbell57/rocky-worlds-notebooks.git && \
     cd rocky-worlds-notebooks && \
-    git checkout 0e55826 && \
+    git checkout 2e239fb && \
     git sparse-checkout init --cone && \
     git sparse-checkout set notebooks/JWST_Data_Processing && \
-    mv notebooks/JWST_Data_Processing /opt/default_notebooks && \
+    mv notebooks/JWST_Data_Processing/* /opt/default_notebooks && \
     cd .. && rm -rf rocky-worlds-notebooks && \
     chmod -R go-w /opt/default_notebooks && \
     chown -R rwddt:rwddt /opt/default_notebooks

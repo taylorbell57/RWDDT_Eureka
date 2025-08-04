@@ -69,7 +69,7 @@ Once running, check the logs to get the Jupyter URL with the correct port and to
 docker logs rwddt_<planet>_<visit>_<analyst>
 ```
 
-Open that URL in your browser (from a browser on your laptop connected via port forwarding, or through a web interface if available).
+Look for a block of green text that starts with "Jupyter Lab is starting!" which will then be followed by a URL. Open that URL in your browser from a browser on your laptop connected via port forwarding.
 
 ---
 
@@ -106,6 +106,8 @@ Open that URL in your browser (from a browser on your laptop connected via port 
   ```
 
   Please be sure to stop the container once you are done using it.
+
+* If you're running Docker on your laptop and get an error message like "Error response from daemon: error while creating mount source path", you'll need to restart the Docker Desktop application. This sometimes happens when your connection to the central storage is interrupted.
 
 ---
 
