@@ -28,16 +28,8 @@ if [ -z "$(ls -A /home/rwddt/notebooks 2>/dev/null)" ]; then
   cp -r /opt/default_notebooks/* /home/rwddt/notebooks/
 fi
 
-# Detect mapped host port for container port 8888
-HOST_PORT="8888"
-if [ -S /var/run/docker.sock ]; then
-  HOST_PORT_DETECTED=$(curl --silent --unix-socket /var/run/docker.sock \
-    http://localhost/containers/$(hostname)/json \
-    | grep -oP '"8888/tcp":\[\{"HostPort":"\K[0-9]+')
-  if [ -n "${HOST_PORT_DETECTED:-}" ]; then
-    HOST_PORT="$HOST_PORT_DETECTED"
-  fi
-fi
+# Use host port passed in via environment variable
+HOST_PORT="${HOST_PORT:-8888}"  # Fallback if not set
 
 # Get best-effort server IP
 SERVER_IP=$(hostname -I | cut -d' ' -f1)

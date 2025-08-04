@@ -29,6 +29,20 @@ NOTEBOOKS_DIR="$ANALYSIS_DIR/notebooks"
 mkdir -p "$ANALYSIS_DIR" "$NOTEBOOKS_DIR"
 chmod -v 2700 "$ANALYSIS_DIR" "$NOTEBOOKS_DIR"
 
+# Find an available port for the host to map to container port 8888
+find_free_port() {
+  local port
+  while true; do
+    port=$((10240 + RANDOM % 50000))
+    if ! lsof -iTCP -sTCP:LISTEN -Pn | grep -q ":$port "; then
+      echo "$port"
+      return
+    fi
+  done
+}
+
+HOST_PORT=$(find_free_port)
+
 # Make a copy of the template
 cp "$TEMPLATE_FILE" "$OUTPUT_FILE"
 
@@ -38,16 +52,18 @@ sed -i.bak \
   -e "s|<planet>|$PLANET|g" \
   -e "s|<visit>|$VISIT|g" \
   -e "s|<analyst>|$ANALYST|g" \
+  -e "s|<hostport>|$HOST_PORT|g" \
   "$OUTPUT_FILE"
 
 # Clean up backup
 rm -f "$OUTPUT_FILE.bak"
 
 echo "Generated $OUTPUT_FILE with:"
-echo "  rootdir = \"$ROOTDIR\""
-echo "  planet  = \"$PLANET\""
-echo "  visit   = \"$VISIT\""
-echo "  analyst = \"$ANALYST\""
+echo "  rootdir  = \"$ROOTDIR\""
+echo "  planet   = \"$PLANET\""
+echo "  visit    = \"$VISIT\""
+echo "  analyst  = \"$ANALYST\""
+echo "  hostport = \"$HOST_PORT\""
 echo
 echo "Created analyst-specific directories with restrictive permissions (2700 = drwx--S---):"
 echo "  $ANALYSIS_DIR"
