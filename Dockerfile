@@ -7,23 +7,31 @@ RUN useradd -m -u 1000 -s /bin/bash rwddt
 WORKDIR /home/rwddt
 
 # Environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV CRDS_PATH="/home/rwddt/crds_cache"
-ENV CRDS_SERVER_URL="https://jwst-crds.stsci.edu"
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Use bash as default shell for consistent conda behavior
 SHELL ["/bin/bash", "-c"]
 
-# Install base build tools
+# Install base tools (one layer) and clean lists in same layer
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential \
-        git \
-        curl
+        build-essential git curl ca-certificates libnss-wrapper && \
+    rm -rf /var/lib/apt/lists/*
+
+# Friendly prompt for interactive shells
+RUN printf '%s\n' \
+  '# pretty prompt only for interactive shells' \
+  'if [ -n "$PS1" ]; then' \
+  '  _u="$(id -un 2>/dev/null || echo rwddt)"; export PS1="(base) [${_u}@\h \W]$ "' \
+  'fi' \
+  > /etc/profile.d/99-ps1.sh
 
 # Install Python and Eureka
 RUN mamba install python=3.13 -y -c conda-forge && \
-    pip install --no-cache-dir 'eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@e0f54ed'
+    pip install 'eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@e0f54ed'
+
+RUN apt-get autoremove -y && apt-get clean && \
+    conda clean -afy
 
 # Clean up apt packages
 RUN apt-get purge -y build-essential && \
@@ -46,15 +54,15 @@ RUN mkdir -p /opt/default_notebooks && \
 
 # Fix TLS loading issue for batman by preloading OpenMP library
 ENV LD_PRELOAD=/opt/conda/lib/libgomp.so.1
+ENV PATH="/home/rwddt/.local/bin:${PATH}"
 
 # Expose relevant folders and port
 EXPOSE 8888
-VOLUME ["/home/rwddt/notebooks", "/home/rwddt/analysis", "/home/rwddt/crds_cache", "/home/rwddt/MAST_Stage1", "/home/rwddt/Uncalibrated"]
+VOLUME ["/mnt/rwddt", "/grp/crds"]
 
 # Copy entrypoint script
-COPY entrypoint.sh /home/rwddt/entrypoint.sh
-RUN chmod +x /home/rwddt/entrypoint.sh && \
-    chown rwddt:rwddt /home/rwddt/entrypoint.sh
+COPY --chown=rwddt:rwddt entrypoint.sh /home/rwddt/entrypoint.sh
+RUN chmod +x /home/rwddt/entrypoint.sh
 
 # Switch to non-root user
 USER rwddt
@@ -62,6 +70,8 @@ USER rwddt
 # Set environment variables for the new user
 ENV HOME=/home/rwddt
 ENV SHELL=/bin/bash
+
+RUN chmod 1777 /home/rwddt
 
 # Metadata
 LABEL org.opencontainers.image.title="RW-DDT Eureka! Container" \

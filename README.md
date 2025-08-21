@@ -76,7 +76,7 @@ Look for a block of green text that starts with "Jupyter Lab is starting!" which
 ## Notes
 
 * If your `notebooks/` folder is empty on first run, example notebooks will be copied in automatically.
-* The CRDS cache is mounted read-only from `/grp/crds/cache`.
+* The CRDS cache is mounted read-only from `/grp/crds`.
 * The container runs as the unprivileged `rwddt` user inside.
 * The server IP and external port are automatically detected and printed at launch.
 * All paths inside the container follow this convention:
@@ -87,7 +87,6 @@ Look for a block of green text that starts with "Jupyter Lab is starting!" which
 | `/home/rwddt/analysis/`     | Your full writable analysis area |
 | `/home/rwddt/MAST_Stage1/`  | Read-only shared MAST inputs     |
 | `/home/rwddt/Uncalibrated/` | Read-only raw JWST uncalibrated  |
-| `/home/rwddt/crds_cache/`   | Read-only CRDS reference cache   |
 
 ---
 

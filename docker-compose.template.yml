@@ -5,26 +5,49 @@
 services:
   rwddt_eureka:
     image: tbell664/rwddt_eureka:latest
+    pull_policy: if_not_present
+    # For local development (uncomment to build locally instead of pulling):
+    # build:
+    #   context: .
 
-    # Customize this to avoid conflicts, e.g. rwddt_toi1234_v01_alice
+    # Customize this to avoid conflicts, e.g. rwddt_toi1234_visit1_Analyst_A
     container_name: rwddt_<planet>_<visit>_<analyst>
+    hostname: rwddt_<planet>_<visit>_<analyst>
+
+    # Reap zombies & forward signals so Jupyter shuts down cleanly
+    init: true
+    stop_signal: SIGINT
+    stop_grace_period: 20s
+
+    # Run container as the real analyst UID and the rwddt group GID
+    user: "<uid>:<rwddt_gid>"
 
     ports:
       - "<hostport>:8888"
 
     volumes:
       # Analyst-specific folders (rw)
-      - <rootdir>/<planet>/<visit>/<analyst>:/home/rwddt/analysis
-      - <rootdir>/<planet>/<visit>/<analyst>/notebooks:/home/rwddt/notebooks
+      - <rootdir>:/mnt/rwddt
+      # Note: The host system must allow containers to read+write to the <rootdir> filesystem
 
       # Shared input data (ro)
-      - /grp/crds/cache:/home/rwddt/crds_cache:ro
-      - <rootdir>/<planet>/<visit>/MAST_Stage1:/home/rwddt/MAST_Stage1:ro
-      - <rootdir>/<planet>/<visit>/Uncalibrated:/home/rwddt/Uncalibrated:ro
+      - /grp/crds:/grp/crds:ro
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
     environment:
-      - TZ=America/New_York
-      - CONDA_ENV=base
-      - HOST_PORT=<hostport>
+      TZ: "America/New_York"
+      CRDS_MODE: local
+      CRDS_PATH: "/grp/crds/cache"
+      CONDA_ENV: base
+      HOST_PORT: <hostport>
+      PLANET: "<planet>"
+      VISIT: "<visit>"
+      ANALYST: "<analyst>"
 
     restart: unless-stopped
+
