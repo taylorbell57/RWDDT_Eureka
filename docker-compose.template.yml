@@ -12,12 +12,12 @@ services:
     # build:
     #   context: .
     #   args:
-    #     NB_UID: ${UID:-1000}
-    #     NB_GID: ${GID:-1000}
-    #     EUREKA_REF: ${EUREKA_REF:-7d479c2}
-    #     NOTEBOOKS_REPO: ${NOTEBOOKS_REPO:-https://github.com/taylorbell57/rocky-worlds-notebooks.git}
-    #     NOTEBOOKS_REF: ${NOTEBOOKS_REF:-2e239fb}
-    #     INCLUDE_NOTEBOOKS: ${INCLUDE_NOTEBOOKS:-true}
+    #   NB_UID: ${UID:-1000}
+    #   NB_GID: ${GID:-1000}
+    #   EUREKA_REF: ${EUREKA_REF:-7d479c2}
+    #   NOTEBOOKS_REPO: ${NOTEBOOKS_REPO:-https://github.com/taylorbell57/rocky-worlds-notebooks.git}
+    #   NOTEBOOKS_REF: ${NOTEBOOKS_REF:-2e239fb}
+    #   INCLUDE_NOTEBOOKS: ${INCLUDE_NOTEBOOKS:-true}
 
     container_name: rwddt_<planet>_<visit>_<analyst>
     hostname: rwddt_<planet>_<visit>_<analyst>
@@ -55,6 +55,7 @@ services:
       CRDS_MODE: ${CRDS_MODE:-local}
       CRDS_PATH: ${CRDS_PATH:-<crds_path>}
       CRDS_SERVER_URL: ${CRDS_SERVER_URL:-https://jwst-crds.stsci.edu}
+      CONDA_CHANGEPS1: no
       CONDA_ENV: base
       HOST_PORT: <hostport>
       PLANET: "<planet>"
