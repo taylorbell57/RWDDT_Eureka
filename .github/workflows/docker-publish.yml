@@ -3,7 +3,7 @@ name: Publish Docker Image on Tag
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   docker-build-and-push:
@@ -11,15 +11,28 @@ jobs:
 
     steps:
       - name: Check out the code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          fetch-tags: false
+          fetch-tags: true
 
-      - name: Set metadata
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV
-          echo "REVISION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/rwddt_eureka
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=rwddt_eureka
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -30,35 +43,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push version tag (multi-arch)
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --push \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/rwddt_eureka:${TAG} \
-            --label "org.opencontainers.image.version=${TAG}" \
-            --label "org.opencontainers.image.created=${CREATED}" \
-            --label "org.opencontainers.image.revision=${REVISION}" \
-            .
+      - name: Build and push (multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Determine if this is the latest version
-        run: |
-          git fetch --tags
-          CURRENT_TAG=${GITHUB_REF##*/}
-          ALL_TAGS=$(git tag | grep -E '^v[0-9]' | sed 's/^v//' | sort -Vr)
-          HIGHEST_TAG=v$(echo "$ALL_TAGS" | head -n 1)
-
-          echo "CURRENT_TAG=$CURRENT_TAG" >> $GITHUB_ENV
-          echo "HIGHEST_TAG=$HIGHEST_TAG" >> $GITHUB_ENV
-
-      - name: Also tag as latest (if highest version)
-        if: env.CURRENT_TAG == env.HIGHEST_TAG
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --push \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/rwddt_eureka:latest \
-            --label "org.opencontainers.image.version=${TAG}" \
-            --label "org.opencontainers.image.created=${CREATED}" \
-            --label "org.opencontainers.image.revision=${REVISION}" \
-            .
