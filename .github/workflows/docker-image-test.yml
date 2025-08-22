@@ -27,10 +27,9 @@ jobs:
       - name: Smoke test - Eureka is importable
         run: |
           set -euxo pipefail
-          docker run --rm --entrypoint "" rwddt_eureka:test python - <<'PY'
-import eureka
-print(getattr(eureka, "__version__", "unknown"))
-PY
+          docker run --rm --entrypoint "" rwddt_eureka:test \
+          python -c 'import eureka, sys; print(getattr(eureka, "__version__", "unknown"))'
+
 
       - name: Extract EUREKA_REF from Dockerfile ARG
         id: eureka_ref
