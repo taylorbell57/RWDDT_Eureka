@@ -107,6 +107,11 @@ find_free_port() {
 }
 HOST_PORT=$(find_free_port)
 
+# Figure out the host's timezone
+HOST_TZ=$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')
+: "${HOST_TZ:=UTC}"   # fallback if detection fails
+export TZ="$HOST_TZ"
+
 # Make a copy of the template
 cp "$TEMPLATE_FILE" "$OUTPUT_FILE"
 

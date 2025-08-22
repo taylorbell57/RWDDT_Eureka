@@ -2,9 +2,9 @@ name: Docker Build and Eureka Test
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   docker-test:
@@ -12,42 +12,55 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - name: Build Docker image (local test)
         run: |
+          set -euxo pipefail
           docker build -t rwddt_eureka:test .
 
-      - name: Smoke test - Jupyter Lab is available?
+      - name: Smoke test - JupyterLab is available
         run: |
+          set -euxo pipefail
           docker run --rm --entrypoint "" rwddt_eureka:test jupyter lab --version
 
-      - name: Smoke test - Eureka! is available?
+      - name: Smoke test - Eureka is importable
         run: |
-          docker run --rm --entrypoint "" rwddt_eureka:test \
-            python -c "import eureka; print(eureka.__version__)"
+          set -euxo pipefail
+          docker run --rm --entrypoint "" rwddt_eureka:test python - <<'PY'
+import eureka
+print(getattr(eureka, "__version__", "unknown"))
+PY
 
-      - name: Extract Eureka commit hash
-        id: eureka
+      - name: Extract EUREKA_REF from Dockerfile ARG
+        id: eureka_ref
         run: |
-          COMMIT=$(grep -oP "Eureka\.git@[\w\d]+" Dockerfile | sed 's/.*@//')
-          if [ -z "$COMMIT" ]; then
-            echo "Could not extract commit from Dockerfile"
+          set -euxo pipefail
+          # Match: ARG EUREKA_REF=<sha> (7..40 hex chars), multi-line safe
+          REF="$(perl -0777 -ne 'print "$1\n" if /(?mi)^\s*ARG\s+EUREKA_REF\s*=\s*([0-9a-fA-F]{7,40})\b/' Dockerfile || true)"
+          if [ -z "${REF}" ]; then
+            echo "Could not extract ARG EUREKA_REF=<sha> from Dockerfile"
             exit 1
           fi
-          echo "EUREKA_COMMIT=$COMMIT" >> $GITHUB_ENV
+          echo "EUREKA_COMMIT=${REF}" >> "$GITHUB_ENV"
 
       - name: Run Eureka test suite inside Docker
         run: |
+          set -euxo pipefail
           docker run --rm \
             --mount type=tmpfs,destination=/home/rwddt/crds_cache \
+            -e CRDS_PATH=/home/rwddt/crds_cache \
+            -e CRDS_SERVER=https://jwst-crds.stsci.edu \
             --entrypoint "" \
             rwddt_eureka:test \
-            bash -c "
+            bash -lc "
               git clone --branch tjb_rwddt https://github.com/kevin218/Eureka.git /home/rwddt/Eureka && \
               cd /home/rwddt/Eureka && \
               git checkout ${EUREKA_COMMIT} && \
               pip install --no-deps --editable . && \
-              pytest -x -v --tb=long --capture=no tests"
+              python -c 'import eureka; print(getattr(eureka, \"__version__\", \"unknown\"))' && \
+              pytest -x -v --tb=long --capture=no tests
+            "
         env:
           EUREKA_COMMIT: ${{ env.EUREKA_COMMIT }}
+

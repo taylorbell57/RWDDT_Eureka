@@ -105,6 +105,7 @@ ENV LD_PRELOAD=/opt/conda/lib/libgomp.so.1
 ENV PATH="/home/rwddt/.local/bin:${PATH}"
 ENV HOME=/home/rwddt
 ENV SHELL=/bin/bash
+ENV CONDA_ENV=base
 
 RUN chmod 1777 /home/rwddt
 

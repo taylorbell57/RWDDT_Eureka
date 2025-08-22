@@ -47,7 +47,7 @@ services:
         max-file: "5"
 
     environment:
-      TZ: "America/New_York"
+      TZ: ${TZ:-UTC}
       # CRDS settings:
       #   local mode: use mounted cache (CRDS_PATH must exist)
       #   remote mode: contact CRDS server (cache optional)
@@ -56,7 +56,6 @@ services:
       CRDS_PATH: ${CRDS_PATH:-<crds_path>}
       CRDS_SERVER_URL: ${CRDS_SERVER_URL:-https://jwst-crds.stsci.edu}
       CONDA_CHANGEPS1: no
-      CONDA_ENV: base
       HOST_PORT: <hostport>
       PLANET: "<planet>"
       VISIT: "<visit>"
