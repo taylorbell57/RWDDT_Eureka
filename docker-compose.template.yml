@@ -54,7 +54,6 @@ services:
       # These default to the user's shell environment if set.
       CRDS_MODE: ${CRDS_MODE:-local}
       CRDS_PATH: ${CRDS_PATH:-<crds_path>}
-      CRDS_SERVER_URL: ${CRDS_SERVER_URL:-https://jwst-crds.stsci.edu}
       CONDA_CHANGEPS1: no
       HOST_PORT: <hostport>
       PLANET: "<planet>"

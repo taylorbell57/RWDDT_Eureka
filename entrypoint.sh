@@ -97,7 +97,7 @@ check_folder /home/rwddt/Uncalibrated "Uncalibrated"
 # CRDS handling:
 # - If CRDS_MODE=local, we require CRDS_PATH to exist (could be /grp/crds/cache or /crds).
 # - If CRDS_MODE!=local (e.g., remote), CRDS_PATH is optional.
-CRDS_MODE="${CRDS_MODE:-local}"
+export CRDS_MODE="${CRDS_MODE:-local}"
 if [[ "${CRDS_MODE}" = "local" ]]; then
   : "${CRDS_PATH:?CRDS_MODE=local requires CRDS_PATH to be set (e.g., /grp/crds/cache or /crds)}"
   check_folder "${CRDS_PATH}" "CRDS_PATH"
@@ -111,9 +111,8 @@ fi
 
 # Export variables for CRDS-aware tools
 export CRDS_PATH
-if [[ -n "${CRDS_SERVER_URL:-}" ]]; then
-  export CRDS_SERVER_URL
-fi
+# Prefer CRDS_SERVER_URL; do not set CRDS_SERVER unless you want legacy compatibility
+export CRDS_SERVER_URL="${CRDS_SERVER_URL:-https://jwst-crds.stsci.edu}"
 
 # ---------- seed default notebooks (only if empty and writable) ----------
 if [ -d /opt/default_notebooks ] && [ -w /home/rwddt/notebooks ]; then

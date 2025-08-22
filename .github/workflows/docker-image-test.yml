@@ -49,7 +49,7 @@ jobs:
           docker run --rm \
             --mount type=tmpfs,destination=/home/rwddt/crds_cache \
             -e CRDS_PATH=/home/rwddt/crds_cache \
-            -e CRDS_SERVER=https://jwst-crds.stsci.edu \
+            -e CRDS_SERVER_URL=https://jwst-crds.stsci.edu \
             --entrypoint "" \
             rwddt_eureka:test \
             bash -lc "
