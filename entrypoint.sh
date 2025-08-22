@@ -2,81 +2,45 @@
 set -Eeuo pipefail
 umask 0002
 
+# Allow opting out of strict workspace requirements for community use
+SIMPLE_MODE="${SIMPLE_MODE:-0}"
+
 # --- Make the current UID/GID resolvable (fixes "I have no name!")
 CUR_UID="$(id -u)"
 CUR_GID="$(id -g)"
 CUR_USER="${USER_NAME:-rwddt}"   # name to show in prompt
 CUR_GROUP="${GROUP_NAME:-rwddt}" # group name to show
 
-if ! getent passwd "$CUR_UID" >/dev/null 2>&1 || ! getent group "$CUR_GID" >/dev/null 2>&1; then
-  export NSS_WRAPPER_PASSWD="$(mktemp)"
-  export NSS_WRAPPER_GROUP="$(mktemp)"
-
-  # Start from existing files if present, else minimal stubs
-  if [ -r /etc/passwd ]; then cp /etc/passwd "$NSS_WRAPPER_PASSWD"; else echo "root:x:0:0:root:/root:/bin/sh" > "$NSS_WRAPPER_PASSWD"; fi
-  if [ -r /etc/group  ]; then cp /etc/group  "$NSS_WRAPPER_GROUP";  else echo "root:x:0:"                          > "$NSS_WRAPPER_GROUP";  fi
-
-  # Append our synthetic entries if missing
-  if ! grep -qE "^[^:]*:[^:]*:${CUR_UID}:" "$NSS_WRAPPER_PASSWD"; then
-    echo "${CUR_USER}:x:${CUR_UID}:${CUR_GID}:${CUR_USER} user:/home/${CUR_USER}:/bin/bash" >> "$NSS_WRAPPER_PASSWD"
-  fi
-  if ! grep -qE "^[^:]*:[^:]*:${CUR_GID}:" "$NSS_WRAPPER_GROUP"; then
-    echo "${CUR_GROUP}:x:${CUR_GID}:" >> "$NSS_WRAPPER_GROUP"
-  fi
-
-  # Activate nss-wrapper
-  export LD_PRELOAD="libnss_wrapper.so:${LD_PRELOAD:-}"
+# Create a passwd entry mapping current UID so tools see a username
+if ! getent passwd "${CUR_UID}" >/dev/null; then
+  NSS_WRAPPER_PASSWD="$(mktemp)"
+  NSS_WRAPPER_GROUP="$(mktemp)"
+  echo "${CUR_GROUP}:x:${CUR_GID}:" > "${NSS_WRAPPER_GROUP}"
+  echo "${CUR_USER}:x:${CUR_UID}:${CUR_GID}:container user:/home/rwddt:/bin/bash" > "${NSS_WRAPPER_PASSWD}"
+  export LD_PRELOAD=libnss_wrapper.so
+  export NSS_WRAPPER_PASSWD NSS_WRAPPER_GROUP
 fi
 
-# ---------- helpers ----------
-
-die() { echo "ERROR: $*" >&2; exit 1; }
-
+# Helpers
 check_folder() {
-  local path="$1" name="$2"
-  [[ -d "$path" ]] || die "The $path folder is missing or not a directory. Please bind-mount your $name folder. See the README."
-}
-
-# Create / update a symlink without ever deleting real dirs/files.
-# - target must resolve under /mnt/rwddt
-# - if dest is a symlink: relink it
-# - if dest exists and is NOT a symlink: abort (no rm -rf!)
-# - if dest does not exist: create new symlink
-safe_link() {
-  local target="$1" dest="$2" allowed_prefix="/mnt/rwddt"
-
-  [[ -e "$target" ]] || die "Target does not exist: $target"
-
-  local target_abs
-  target_abs=$(readlink -f -- "$target") || die "Failed to resolve: $target"
-
-  case "$target_abs" in
-    "$allowed_prefix"/*) ;;  # OK
-    *) die "Refusing to link outside $allowed_prefix -> $target_abs" ;;
-  esac
-
-  if [[ -L "$dest" ]]; then
-    ln -sfnT -- "$target_abs" "$dest"
-  elif [[ -e "$dest" ]]; then
-    echo "ERROR: $dest already exists and is not a symlink. Please remove/rename it manually."
-    ls -ld -- "$dest"
+  local path="$1"
+  local label="$2"
+  if [ ! -d "$path" ]; then
+    echo "Missing ${label}: $path"
     exit 1
-  else
-    ln -sT -- "$target_abs" "$dest"
   fi
 }
 
-dir_is_empty() {
-  local d="$1"
-  [[ -z "$(find "$d" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]
+safe_link() {
+  local src="$1"
+  local dst="$2"
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    rm -rf "$dst"
+  fi
+  ln -s "$src" "$dst"
 }
 
-dir_is_writable() {
-  local d="$1" t
-  t=$(mktemp -p "$d" .writecheck.XXXX 2>/dev/null) || return 1
-  rm -f -- "$t"
-  return 0
-}
+die() { echo "ERROR: $*" >&2; exit 1; }
 
 # ---------- environment ----------
 
@@ -86,22 +50,37 @@ ANALYST="${ANALYST:-}"
 HOST_PORT="${HOST_PORT:-8888}"     # used for the log line only; container binds 8888
 CONDA_ENV="${CONDA_ENV:-base}"
 
-[[ -n "$PLANET"  ]] || die "Missing PLANET env var"
-[[ -n "$VISIT"   ]] || die "Missing VISIT env var"
-[[ -n "$ANALYST" ]] || die "Missing ANALYST env var"
-
-BASE_PATH="/mnt/rwddt/JWST/${PLANET}/${VISIT}"
+# Community-friendly defaults: if not provided, fall back to a simple workspace
+if [[ -z "$PLANET" || -z "$VISIT" || -z "$ANALYST" ]]; then
+  if [[ "$SIMPLE_MODE" = "1" ]]; then
+    echo "SIMPLE_MODE=1 -> Using a generic workspace under /home/rwddt/work"
+    mkdir -p /home/rwddt/work/notebooks
+    BASE_PATH="/home/rwddt/work"
+    : "${PLANET:=local}"
+    : "${VISIT:=visit}"
+    : "${ANALYST:=analyst}"
+  else
+    die "Missing PLANET/VISIT/ANALYST env vars. Set SIMPLE_MODE=1 to use a local workspace."
+  fi
+else
+  BASE_PATH="/mnt/rwddt/JWST/${PLANET}/${VISIT}"
+fi
 
 # Ensure mount roots exist
-check_folder "/mnt/rwddt" "rwddt root"
-check_folder "$BASE_PATH" "visit folder"
+if [[ "$SIMPLE_MODE" != "1" ]]; then
+  check_folder "/mnt/rwddt" "rwddt root"
+  check_folder "$BASE_PATH" "visit folder"
+fi
 
 # ---------- link the working dirs safely ----------
-
-safe_link "${BASE_PATH}/${ANALYST}"            /home/rwddt/analysis
-safe_link "${BASE_PATH}/${ANALYST}/notebooks"  /home/rwddt/notebooks
-safe_link "${BASE_PATH}/MAST_Stage1"           /home/rwddt/MAST_Stage1
-safe_link "${BASE_PATH}/Uncalibrated"          /home/rwddt/Uncalibrated
+if [[ "$SIMPLE_MODE" = "1" ]]; then
+  mkdir -p /home/rwddt/analysis /home/rwddt/notebooks /home/rwddt/MAST_Stage1 /home/rwddt/Uncalibrated
+else
+  safe_link "${BASE_PATH}/${ANALYST}"            /home/rwddt/analysis
+  safe_link "${BASE_PATH}/${ANALYST}/notebooks"  /home/rwddt/notebooks
+  safe_link "${BASE_PATH}/MAST_Stage1"           /home/rwddt/MAST_Stage1
+  safe_link "${BASE_PATH}/Uncalibrated"          /home/rwddt/Uncalibrated
+fi
 
 echo "------------------------------------------------------------"
 echo " Verifying required volume mounts..."
@@ -114,48 +93,70 @@ check_folder /home/rwddt/notebooks    "notebooks"
 check_folder /home/rwddt/analysis     "analysis"
 check_folder /home/rwddt/MAST_Stage1  "MAST Stage1"
 check_folder /home/rwddt/Uncalibrated "Uncalibrated"
-check_folder ${CRDS_PATH}             "CRDS_PATH"
 
-# ---------- seed default notebooks (only if empty & writable) ----------
-
-if dir_is_empty "/home/rwddt/notebooks"; then
-  if dir_is_writable "/home/rwddt/notebooks"; then
-    echo "Notebook folder is empty. Copying in default tutorial notebooks..."
-    cp -r /opt/default_notebooks/* /home/rwddt/notebooks/
+# CRDS handling:
+# - If CRDS_MODE=local, we require CRDS_PATH to exist (could be /grp/crds/cache or /crds).
+# - If CRDS_MODE!=local (e.g., remote), CRDS_PATH is optional.
+CRDS_MODE="${CRDS_MODE:-local}"
+if [[ "${CRDS_MODE}" = "local" ]]; then
+  : "${CRDS_PATH:?CRDS_MODE=local requires CRDS_PATH to be set (e.g., /grp/crds/cache or /crds)}"
+  check_folder "${CRDS_PATH}" "CRDS_PATH"
+else
+  if [[ -n "${CRDS_PATH:-}" && -d "${CRDS_PATH}" ]]; then
+    echo "CRDS_PATH present (${CRDS_PATH}) with CRDS_MODE=${CRDS_MODE}."
   else
-    echo "Warning: /home/rwddt/notebooks is not writable; skipping default notebook copy."
+    echo "CRDS_MODE=${CRDS_MODE} and CRDS_PATH not mounted; proceeding without a local CRDS cache."
   fi
 fi
 
-# ---------- conda + Jupyter ----------
+# Export variables for CRDS-aware tools
+export CRDS_PATH
+if [[ -n "${CRDS_SERVER_URL:-}" ]]; then
+  export CRDS_SERVER_URL
+fi
 
-# Activate conda environment
+# ---------- seed default notebooks (only if empty and writable) ----------
+if [ -d /opt/default_notebooks ] && [ -w /home/rwddt/notebooks ]; then
+  if [ -z "$(ls -A /home/rwddt/notebooks 2>/dev/null)" ]; then
+    cp -r /opt/default_notebooks/* /home/rwddt/notebooks/ || true
+  fi
+fi
+
+# ---------- start Jupyter ----------
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+
+# Activate conda
 eval "$(conda shell.bash hook)"
+export CONDA_CHANGEPS1=no
 conda activate "$CONDA_ENV"
 
-# Pretty prompt that doesn't depend on /etc/passwd lookup
-export PS1='(base) [rwddt@\h \W]$ '
+# Final prompt in terminals: [user@host cwd]$
+# Use \u to respect NSS wrapper username; \W shows only the leaf dir (e.g. notebooks)
+export PS1='[\u@\h \W]$ '
 
-# Generate a secure random token
+# Generate a secure random token and show the exact URL
 TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
-
-GREEN='\033[1;32m'; NC='\033[0m'
-echo -e "${GREEN}============================================================================="
-echo " Jupyter Lab is starting!"
-echo ""
-echo " Access it locally at: http://localhost:${HOST_PORT}/?token=${TOKEN}"
-echo ""
-echo " If Docker is running on a remote host, first forward the port, e.g.:"
-echo "   ssh -L ${HOST_PORT}:localhost:${HOST_PORT} RemoteHostName"
-echo " Then open the same URL in your local browser."
-echo -e "=============================================================================${NC}"
+export JUPYTER_TOKEN="$TOKEN"
+URL="http://localhost:${HOST_PORT}/?token=${TOKEN}"
+echo -e "${GREEN}================================================================================${NC}"
+echo -e "${GREEN} Jupyter Lab URL: ${URL}${NC}"
+echo -e "${GREEN} If Docker is running on a remote host, first forward the port, e.g.:${NC}"
+echo -e "${GREEN}   ssh -L ${HOST_PORT}:localhost:${HOST_PORT} RemoteHostName${NC}"
+echo -e "${GREEN} Then open the same URL in your local browser.${NC}"
+echo -e "${GREEN}================================================================================${NC}"
 echo ""
 
 # Run Jupyter in the foreground as PID 1 so logs stream
+# Keep kernels running even if no browser is connected; avoid output backpressure stalls
 exec jupyter lab \
   --ip=0.0.0.0 \
   --port=8888 \
   --no-browser \
   --notebook-dir=/home/rwddt/ \
-  --ServerApp.token="${TOKEN}"
+  --ServerApp.websocket_ping_interval=30000 \
+  --ServerApp.websocket_ping_timeout=30000 \
+  --ZMQChannelsWebsocketConnection.websocket_ping_interval=30000 \
+  --ZMQChannelsWebsocketConnection.websocket_ping_timeout=30000 \
+  --TerminalsWebsocketConnection.websocket_ping_interval=30000 \
+  --TerminalsWebsocketConnection.websocket_ping_timeout=30000
 
