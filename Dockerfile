@@ -11,9 +11,9 @@ WORKDIR /home/rwddt
 
 # Build args for reproducibility and optional notebooks
 ARG DEBIAN_FRONTEND=noninteractive
-ARG EUREKA_REF=7d479c2
+ARG EUREKA_REF=5c65f51
 ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
-ARG NOTEBOOKS_REF=2e239fb
+ARG NOTEBOOKS_REF=3b5fe20
 ARG INCLUDE_NOTEBOOKS=true
 
 # Use bash as default shell for consistent conda behavior
@@ -31,7 +31,6 @@ RUN printf '%s\n' \
   '  export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
   'fi' \
   > /etc/profile.d/99-ps1.sh
-
 RUN printf "%s\n" \
 'export PROMPT_DIRTRIM=2' \
 'export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
@@ -45,7 +44,7 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
              /home/rwddt/.config && \
     chmod -R 0777 /home/rwddt/.jupyter /home/rwddt/.local /home/rwddt/.config
 
-# Jupyter Server 2.x config (no deprecations), placed in a global location
+# Jupyter Server 2.x config, placed in a global location
 RUN mkdir -p /etc/jupyter && \
     python - <<'PY'
 from pathlib import Path
@@ -107,6 +106,7 @@ ENV HOME=/home/rwddt
 ENV SHELL=/bin/bash
 ENV CONDA_ENV=base
 
+# Make sure /home/rwddt is accessible by the external user's UID/GID
 RUN chmod 1777 /home/rwddt
 
 # Ports and volumes
