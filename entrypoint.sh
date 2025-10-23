@@ -137,25 +137,51 @@ export PS1='[\u@\h \W]$ '
 TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
 export JUPYTER_TOKEN="$TOKEN"
 URL="http://localhost:${HOST_PORT}/?token=${TOKEN}"
-echo -e "${GREEN}================================================================================${NC}"
-echo -e "${GREEN} Jupyter Lab URL: ${URL}${NC}"
-echo -e "${GREEN} If Docker is running on a remote host, first forward the port, e.g.:${NC}"
-echo -e "${GREEN}   ssh -L ${HOST_PORT}:localhost:${HOST_PORT} RemoteHostName${NC}"
-echo -e "${GREEN} Then open the same URL in your local browser.${NC}"
-echo -e "${GREEN}================================================================================${NC}"
-echo ""
 
-# Run Jupyter in the foreground as PID 1 so logs stream
-# Keep kernels running even if no browser is connected; avoid output backpressure stalls
-exec jupyter lab \
-  --ip=0.0.0.0 \
-  --port=8888 \
-  --no-browser \
-  --notebook-dir=/home/rwddt/ \
-  --ServerApp.websocket_ping_interval=30000 \
-  --ServerApp.websocket_ping_timeout=30000 \
-  --ZMQChannelsWebsocketConnection.websocket_ping_interval=30000 \
-  --ZMQChannelsWebsocketConnection.websocket_ping_timeout=30000 \
-  --TerminalsWebsocketConnection.websocket_ping_interval=30000 \
+# --------------------------------------------------------------------
+# Launch JupyterLab inside a persistent tmux session
+# --------------------------------------------------------------------
+SESSION="jlab"
+LOG_FILE="/home/rwddt/jupyter.log"
+
+JUPYTER_CMD=(
+  jupyter lab
+  --ip=0.0.0.0
+  --port=8888
+  --no-browser
+  --notebook-dir=/home/rwddt/
+  --ServerApp.websocket_ping_interval=30000
+  --ServerApp.websocket_ping_timeout=30000
+  --ZMQChannelsWebsocketConnection.websocket_ping_interval=30000
+  --ZMQChannelsWebsocketConnection.websocket_ping_timeout=30000
+  --TerminalsWebsocketConnection.websocket_ping_interval=30000
   --TerminalsWebsocketConnection.websocket_ping_timeout=30000
+)
+
+mkdir -p "$(dirname "$LOG_FILE")"
+: > "$LOG_FILE" || true
+chmod 666 "$LOG_FILE" || true
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  echo "Reusing existing tmux session: $SESSION"
+else
+  tmux new-session -d -s "$SESSION" "exec ${JUPYTER_CMD[*]} 2>&1 | tee -a '$LOG_FILE'"
+  sleep 2
+fi
+
+echo -e "${GREEN}====================================================================${NC}"
+echo -e "${GREEN} JupyterLab is running and kernels persist even if you disconnect.${NC}"
+echo -e "${GREEN} Access URL: ${URL}${NC}"
+echo -e "${GREEN} If Docker is on a remote host, forward the port first, e.g.:${NC}"
+echo -e "${GREEN}   ssh -L ${HOST_PORT}:localhost:${HOST_PORT} RemoteHostName${NC}"
+echo -e "${GREEN}====================================================================${NC}"
+echo ""
+echo "To view live server logs inside the container:"
+echo "  docker exec -it <container_name> tmux attach -t $SESSION"
+echo "Detach from tmux with Ctrl-b then d."
+
+# Keep PID 1 alive while tmux session exists
+while tmux has-session -t "$SESSION" 2>/dev/null; do
+  sleep 5
+done
 

@@ -16,13 +16,16 @@ ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
 ARG NOTEBOOKS_REF=2e239fb
 ARG INCLUDE_NOTEBOOKS=true
 
+# Make Python stdout/stderr unbuffered for real-time logs
+ENV PYTHONUNBUFFERED=1
+
 # Use bash as default shell for consistent conda behavior
 SHELL ["/bin/bash", "-c"]
 
 # Install base tools in one layer
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential git curl ca-certificates libnss-wrapper htop && \
+        build-essential git curl ca-certificates libnss-wrapper htop tmux && \
     rm -rf /var/lib/apt/lists/*
 
 # Friendly prompt for interactive shells
@@ -77,6 +80,12 @@ p.write_text("\n".join([
 ]))
 print("Wrote", p)
 PY
+
+# JupyterLab default settings: autosave every 60 seconds
+# JupyterLab reads this file as a system-wide default (applies to all users)
+RUN mkdir -p /opt/conda/share/jupyter/lab/settings && \
+    printf '{\n  "@jupyterlab/docmanager-extension:plugin": {\n    "autosaveInterval": 60000\n  }\n}\n' \
+      > /opt/conda/share/jupyter/lab/settings/overrides.json
 
 # Install Python and Eureka
 RUN mamba install -y -c conda-forge python=3.13 && \
