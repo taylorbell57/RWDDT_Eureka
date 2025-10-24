@@ -13,7 +13,7 @@ WORKDIR /home/rwddt
 ARG DEBIAN_FRONTEND=noninteractive
 ARG EUREKA_REF=115ebc5
 ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
-ARG NOTEBOOKS_REF=095c25b
+ARG NOTEBOOKS_REF=88688a2
 ARG INCLUDE_NOTEBOOKS=true
 
 # Make Python stdout/stderr unbuffered for real-time logs

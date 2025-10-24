@@ -25,9 +25,11 @@ fi
 check_folder() {
   local path="$1"
   local label="$2"
-  if [ ! -d "$path" ]; then
-    echo "Missing ${label}: $path"
-    exit 1
+  local noexit="${3:-}"   # any non-empty value means "warn only"
+
+  if [[ ! -d "$path" ]]; then
+    echo "Missing ${label}: $path" >&2
+    [[ -n "$noexit" ]] || exit 1
   fi
 }
 
@@ -91,8 +93,8 @@ echo "Resolved notebooks -> $(readlink -f /home/rwddt/notebooks || true)"
 
 check_folder /home/rwddt/notebooks    "notebooks"
 check_folder /home/rwddt/analysis     "analysis"
-check_folder /home/rwddt/MAST_Stage1  "MAST Stage1"
-check_folder /home/rwddt/Uncalibrated "Uncalibrated"
+check_folder /home/rwddt/MAST_Stage1  "MAST Stage1"  warm
+check_folder /home/rwddt/Uncalibrated "Uncalibrated" warn
 
 # CRDS handling:
 # - If CRDS_MODE=local, we require CRDS_PATH to exist (could be /grp/crds/cache or /crds).
