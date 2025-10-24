@@ -31,16 +31,21 @@ jobs:
           VER="${RAW#v}"                        # strip leading v if present
 
           # Only allow X.Y or X.Y.Z (numeric) – prereleases were blocked at job level
-          if [[ ! "$VER" =~ ^([0-9]+)\.([0-9]+)(?:\.([0-9]+))?$ ]]; then
+          if [[ ! "$VER" =~ ^([0-9]+)\.([0-9]+)(\.([0-9]+))?$ ]]; then
             echo "Unsupported tag format: $RAW"
             exit 1
           fi
           MAJ="${BASH_REMATCH[1]}"
           MIN="${BASH_REMATCH[2]}"
-          PAT="${BASH_REMATCH[3]:-}"           # empty if two-part
+          # Group 3 is ".PATCH"; group 4 is just PATCH digits
+          PAT="${BASH_REMATCH[4]:-}"           # empty if two-part
 
           # Normalize to X.Y.Z for comparisons
-          if [ -z "$PAT" ]; then CUR_NORM="${MAJ}.${MIN}.0"; else CUR_NORM="${MAJ}.${MIN}.${PAT}"; fi
+          if [ -z "$PAT" ]; then
+            CUR_NORM="${MAJ}.${MIN}.0"
+          else
+            CUR_NORM="${MAJ}.${MIN}.${PAT}"
+          fi
 
           # Collect repo tags that are strictly numeric X.Y or X.Y.Z (ignore prereleases/build metadata)
           mapfile -t ALL_NORM < <(
