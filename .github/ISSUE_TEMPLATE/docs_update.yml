@@ -1,0 +1,24 @@
+name: "Docs update"
+description: Improve or fix documentation
+title: "docs: <page or topic>"
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Affected page/file (path or URL)
+      placeholder: "README.md"
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change?
+      description: Provide corrected text, example, or outline.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / examples (optional)
+

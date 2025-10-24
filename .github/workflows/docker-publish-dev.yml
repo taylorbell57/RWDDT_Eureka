@@ -1,18 +1,23 @@
-# .github/workflows/docker-publish-dev.yml
 name: Publish Dev Docker Image on Main Push
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   docker-build-and-push-dev:
+    concurrency:
+      group: dev-publish-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
+
+      - name: Compute short SHA
+        id: shortsha
+        shell: bash
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
       - name: Docker meta
         id: meta
@@ -21,12 +26,12 @@ jobs:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/rwddt_eureka
           tags: |
             type=raw,value=dev
-            type=raw,value=main-${{ github.sha }}
+            type=raw,value=main-${{ env.SHORT_SHA }}
           labels: |
             org.opencontainers.image.title=rwddt_eureka
-            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.created=${{ github.run_started_at }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -49,5 +54,5 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
