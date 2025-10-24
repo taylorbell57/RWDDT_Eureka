@@ -1,0 +1,60 @@
+name: "Bug report"
+description: Report a reproducible problem
+title: "bug: <short description>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Please fill out what you can. Concise and reproducible beats exhaustive.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong, in one or two sentences?
+      placeholder: "Running `eureka` with tag 0.5 fails on arm64 when importing..."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps/commands, minimal data or link, and what you expected to happen.
+      placeholder: |
+        1. Pull image `tbell664/rwddt_eureka:0.5`
+        2. Run `...`
+        3. See error `...`
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / traceback
+      description: Relevant snippets only (or attach files).
+      render: shell
+  - type: input
+    id: tag
+    attributes:
+      label: Docker image tag or package version
+      placeholder: "0.5.1 or dev / main-abcdef0"
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: CPU architecture
+      options: ["amd64", "arm64", "other/unknown"]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Host OS / kernel (or Docker Desktop version)
+      placeholder: "Ubuntu 22.04, macOS 14.6.1, Docker 27.x"
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+
