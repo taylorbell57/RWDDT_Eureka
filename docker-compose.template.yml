@@ -6,7 +6,7 @@ services:
   rwddt_eureka:
     # Prefer a tagged image for reproducibility; override via IMAGE env if desired
     image: ${IMAGE:-tbell664/rwddt_eureka:latest}
-    pull_policy: if_not_present
+    pull_policy: always
 
     # For local development (uncomment to build locally instead of pulling):
     # build:
