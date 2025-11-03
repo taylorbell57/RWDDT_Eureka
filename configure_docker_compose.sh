@@ -44,7 +44,7 @@ ANALYST_GID=$(id -g)   # user's primary group by default
 
 # For STScI split layout, prefer the rwddt group GID if it exists
 if [ "$CRDS_LAYOUT" = "split" ]; then
-  RWDDT_GID="$(getent group rwddt | cut -d: -f3 || true)"
+  RWDDT_GID="$(perl -e 'my @g = getgrnam shift; print $g[2] if @g' rwddt)" || true
   if [[ -n "${RWDDT_GID}" ]]; then
     ANALYST_GID="${RWDDT_GID}"
   fi
@@ -94,18 +94,22 @@ if [ "$CRDS_LAYOUT" = "single" ]; then
   mkdir -p "${CRDS_DIR}" || true
 fi
 
-# Find an available port for the host to map to container port 8888
+# Find an available host port (≥10240) free on both IPv4 and IPv6 for the host to map to container port 8888
 find_free_port() {
-  local port
-  while true; do
-    port=$((10240 + RANDOM % 50000))
-    if ! ss -ltn "( sport = :$port )" | grep -q ":$port "; then
-      echo "$port"
-      return
-    fi
-  done
+  perl -MIO::Socket::INET -e '
+    my ($min,$max,$tries) = (10240, 60239, 2000);
+    for (1..$tries) {
+      my $p = $min + int(rand($max-$min+1));
+      my $s = IO::Socket::INET->new(
+        LocalAddr => "0.0.0.0", LocalPort => $p,
+        Proto => "tcp", Listen => 1, ReuseAddr => 0
+      );
+      if ($s) { close $s; print $p; exit 0 }
+    }
+    exit 1;
+  '
 }
-HOST_PORT=$(find_free_port)
+HOST_PORT="$(find_free_port)" || { echo "could not find a free port" >&2; exit 1; }
 
 # Figure out the host's timezone
 HOST_TZ=$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')
