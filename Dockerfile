@@ -11,7 +11,7 @@ WORKDIR /home/rwddt
 
 # Build args for reproducibility and optional notebooks
 ARG DEBIAN_FRONTEND=noninteractive
-ARG EUREKA_REF=3c9b359
+ARG EUREKA_REF=3a67244
 ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
 ARG NOTEBOOKS_REF=3c97fa5
 ARG INCLUDE_NOTEBOOKS=true
