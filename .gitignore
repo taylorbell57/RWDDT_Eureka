@@ -7,8 +7,17 @@
 *.pyo
 *.pyd
 
+# Common Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
 # Virtual environments and pip artifacts
 .env
+.env.*
 .venv/
 *.egg-info/
 Pipfile.lock
@@ -20,10 +29,27 @@ Thumbs.db
 
 # Editor folders and temporary files
 .vscode/
+.idea/
 *.swp
 *.swo
 *.bak
 *.tmp
+
+# --------------------------------------------------------------------
+# RWDDT local run artifacts (DO NOT COMMIT)
+# These contain absolute paths, per-user ports, and per-run scripts/state.
+# --------------------------------------------------------------------
+runs/
+**/.rwddt_state
+**/rwddt-run
+
+# Docker / Compose generated files (DO NOT COMMIT)
+docker-compose.yml
+
+# If you want broader ignore patterns, explicitly keep the template:
+docker-compose.*.yml
+!docker-compose.template.yml
+!docker-compose.simple.template.yml
 
 # Local data and mounted volumes (do not track user-generated results)
 data/
@@ -31,10 +57,7 @@ notebooks/
 crds_cache/
 analysis/
 
-# Docker-related overrides and deployment files
-docker-compose.yml
-
-# Build artifacts
+# Logs / build artifacts
 dist/
 build/
 *.log

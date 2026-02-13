@@ -1,48 +1,146 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage
-if [ "$#" -lt 4 ] || [ "$#" -gt 6 ]; then
-  echo "Usage: $0 <rootdir> <planet> <visit> <analyst> [<crds_dir>] [<layout: split|single>]"
-  echo "Examples:"
-  echo "  STScI split:   $0 /path/to/root TOI-1234b visit1 Analyst_A /grp/crds split"
-  echo "  Community one: $0 /data        TOI-1234b visit1 Analyst_A \$HOME/crds_cache single"
-  exit 1
-fi
+# -----------------------------------------------------------------------------
+# configure_docker_compose.sh
+#
+# Structured mode (recommended):
+#   ./configure_docker_compose.sh <rootdir> <planet> <visit> <analyst> [<crds_dir>] [split|single]
+#
+# Simple mode (quick tests; no required host structure; no persistence by default):
+#   ./configure_docker_compose.sh --simple [<crds_dir>] [split|single]
+#
+# Outputs a run directory under:
+#   runs/<planet>_<visit>/           (structured)
+#   runs/simple_<timestamp>/         (simple)
+# containing:
+#   - docker-compose.yml
+#   - .rwddt_state
+#   - rwddt-run                      (wrapper)
+# -----------------------------------------------------------------------------
 
-ROOTDIR=$1
-PLANET=$2
-VISIT=$3
-ANALYST=$4
-CRDS_DIR_DEFAULT="${HOME}/crds_cache"
-CRDS_DIR="${5:-$CRDS_DIR_DEFAULT}"
-LAYOUT_DEFAULT="single"
-CRDS_LAYOUT="${6:-$LAYOUT_DEFAULT}"
+# Resolve script directory so template lookup works regardless of cwd
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNS_ROOT="${SCRIPT_DIR}/runs"
 
-case "$ROOTDIR" in
-  /*) : ;;
-  *) echo "Error: <rootdir> must be an absolute path (got '$ROOTDIR')."; exit 1 ;;
-esac
-if [ ! -d "$ROOTDIR" ]; then
-  echo "Error: <rootdir> '$ROOTDIR' does not exist or is not a directory."
-  exit 1
-fi
+STRUCT_TEMPLATE_FILE="docker-compose.template.yml"
+SIMPLE_TEMPLATE_FILE="docker-compose.simple.template.yml"
+STRUCT_TEMPLATE_PATH="${SCRIPT_DIR}/${STRUCT_TEMPLATE_FILE}"
+SIMPLE_TEMPLATE_PATH="${SCRIPT_DIR}/${SIMPLE_TEMPLATE_FILE}"
 
-VISIT_ROOT="${ROOTDIR%/}/JWST/${PLANET}/${VISIT}"
-if [ ! -d "$(dirname "$VISIT_ROOT")" ]; then
-  echo "Error: Parent directory '$(dirname "$VISIT_ROOT")' does not exist."
-  echo "Create $ROOTDIR/JWST/$PLANET first, or fix your arguments."
-  exit 1
-fi
-
-TEMPLATE_FILE="docker-compose.template.yml"
 OUTPUT_FILE="docker-compose.yml"
+STATE_FILE=".rwddt_state"
+WRAPPER="rwddt-run"
 
-# Resolve IDs for correct file ownership on host
-ANALYST_UID=$(id -u)   # current user
-ANALYST_GID=$(id -g)   # user's primary group by default
+# -------- helpers --------
+sanitize() {
+  echo "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9_-]+/_/g; s/^[_-]+//; s/[_-]+$//'
+}
 
-# For STScI split layout, prefer the rwddt group GID if it exists
+usage() {
+  cat <<'USAGE'
+Usage:
+  Structured mode (recommended):
+    ./configure_docker_compose.sh <rootdir> <planet> <visit> <analyst> [<crds_dir>] [split|single]
+
+  Simple mode (quick tests; no required host structure; no persistence by default):
+    ./configure_docker_compose.sh --simple [<crds_dir>] [split|single]
+
+Notes:
+  - <rootdir> must be an absolute path.
+  - split layout mounts CRDS read-only at /grp/crds and sets CRDS_PATH=/grp/crds/cache
+  - single layout mounts CRDS read-write at /crds and sets CRDS_PATH=/crds
+USAGE
+}
+
+replace_placeholder() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  sed -i.bak -e "s|<${key}>|${value}|g" "$file"
+}
+
+# Uncomment a commented volume line in the structured template if it exists
+# Looks for:  # - <mast_stage1_host>:...
+uncomment_volume_line_for_placeholder() {
+  local file="$1"
+  local key="$2"
+  sed -i.bak -E \
+    -e "s|^([[:space:]]*)#([[:space:]]*-[[:space:]]*<${key}>:)|\\1\\2|" \
+    -e "s|^([[:space:]]*)#([[:space:]]*-[[:space:]]*&lt;${key}&gt;:)|\\1\\2|" \
+    "$file"
+}
+
+# -------- argument parsing --------
+MODE="structured"
+if [[ "${1:-}" == "--simple" ]]; then
+  MODE="simple"
+  shift || true
+fi
+
+CRDS_DIR_DEFAULT="${HOME}/crds_cache"
+LAYOUT_DEFAULT="single"
+
+if [[ "$MODE" == "structured" ]]; then
+  if [ "$#" -lt 4 ] || [ "$#" -gt 6 ]; then
+    usage
+    exit 1
+  fi
+
+  ROOTDIR=$1
+  PLANET=$2
+  VISIT=$3
+  ANALYST=$4
+  CRDS_DIR="${5:-$CRDS_DIR_DEFAULT}"
+  CRDS_LAYOUT="${6:-$LAYOUT_DEFAULT}"
+
+  case "$ROOTDIR" in
+    /*) : ;;
+    *) echo "Error: <rootdir> must be an absolute path (got '$ROOTDIR')." >&2; exit 1 ;;
+  esac
+  if [ ! -d "$ROOTDIR" ]; then
+    echo "Error: <rootdir> '$ROOTDIR' does not exist or is not a directory." >&2
+    exit 1
+  fi
+
+  VISIT_ROOT="${ROOTDIR%/}/JWST/${PLANET}/${VISIT}"
+  if [ ! -d "$(dirname "$VISIT_ROOT")" ]; then
+    echo "Error: Parent directory '$(dirname "$VISIT_ROOT")' does not exist." >&2
+    echo "Create $ROOTDIR/JWST/$PLANET first, or fix your arguments." >&2
+    exit 1
+  fi
+
+  if [ ! -f "$STRUCT_TEMPLATE_PATH" ]; then
+    echo "Error: $STRUCT_TEMPLATE_PATH not found." >&2
+    exit 1
+  fi
+else
+  if [ "$#" -gt 2 ]; then
+    usage
+    exit 1
+  fi
+
+  CRDS_DIR="${1:-$CRDS_DIR_DEFAULT}"
+  CRDS_LAYOUT="${2:-$LAYOUT_DEFAULT}"
+
+  if [ ! -f "$SIMPLE_TEMPLATE_PATH" ]; then
+    echo "Error: $SIMPLE_TEMPLATE_PATH not found." >&2
+    exit 1
+  fi
+
+  ROOTDIR=""
+  PLANET=""
+  VISIT=""
+  ANALYST=""
+fi
+
+# -------- resolve IDs for correct file ownership on host --------
+ANALYST_UID=$(id -u)
+ANALYST_GID=$(id -g)
+
+# Prefer rwddt group GID in split layout if it exists
 if [ "$CRDS_LAYOUT" = "split" ]; then
   RWDDT_GID="$(perl -e 'my @g = getgrnam shift; print $g[2] if @g' rwddt)" || true
   if [[ -n "${RWDDT_GID}" ]]; then
@@ -50,11 +148,7 @@ if [ "$CRDS_LAYOUT" = "split" ]; then
   fi
 fi
 
-# Determine CRDS mount target, bind mode, and CRDS_PATH inside the container
-# split:
-#   host mounts /grp/crds to /grp/crds (ro), CRDS_PATH=/grp/crds/cache
-# single:
-#   host mounts <crds_dir> to /crds (rw), CRDS_PATH=/crds
+# -------- determine CRDS mount target, bind mode, and CRDS_PATH --------
 case "$CRDS_LAYOUT" in
   split)
     CRDS_TARGET="/grp/crds"
@@ -67,34 +161,17 @@ case "$CRDS_LAYOUT" in
     CRDS_PATH="/crds"
     ;;
   *)
-    echo "Error: invalid layout '$CRDS_LAYOUT' (use 'split' or 'single')."
+    echo "Error: invalid layout '$CRDS_LAYOUT' (use 'split' or 'single')." >&2
     exit 1
     ;;
 esac
-
-# Check template
-if [ ! -f "$TEMPLATE_FILE" ]; then
-  echo "Error: $TEMPLATE_FILE not found in current directory."
-  exit 1
-fi
-
-# Create project tree under the JWST namespace expected by the container
-BASE_VISIT_DIR="$ROOTDIR/JWST/$PLANET/$VISIT"
-ANALYSIS_DIR="$BASE_VISIT_DIR/$ANALYST"
-NOTEBOOKS_DIR="$ANALYSIS_DIR/notebooks"
-if command -v install >/dev/null 2>&1; then
-  install -d -m 2700 -g "$ANALYST_GID" "$ANALYSIS_DIR" "$NOTEBOOKS_DIR"
-else
-  mkdir -p "$NOTEBOOKS_DIR"
-  chmod 2700 "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" || true
-fi
 
 # Ensure a local CRDS directory exists for single layout
 if [ "$CRDS_LAYOUT" = "single" ]; then
   mkdir -p "${CRDS_DIR}" || true
 fi
 
-# Find an available host port (≥10240) free on both IPv4 and IPv6 for the host to map to container port 8888
+# -------- find an available host port (>=10240) --------
 find_free_port() {
   perl -MIO::Socket::INET -e '
     my ($min,$max,$tries) = (10240, 60239, 2000);
@@ -111,55 +188,206 @@ find_free_port() {
 }
 HOST_PORT="$(find_free_port)" || { echo "could not find a free port" >&2; exit 1; }
 
-# Figure out the host's timezone
-HOST_TZ=$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')
-: "${HOST_TZ:=UTC}"   # fallback if detection fails
-export TZ="$HOST_TZ"
+# -------- naming + run directory --------
+USER_SAFE="$(sanitize "${USER:-unknown}")"
 
-# Make a copy of the template
-cp "$TEMPLATE_FILE" "$OUTPUT_FILE"
+if [[ "$MODE" == "structured" ]]; then
+  PLANET_SAFE="$(sanitize "$PLANET")"
+  VISIT_SAFE="$(sanitize "$VISIT")"
+  DATASET_SAFE="${PLANET_SAFE}_${VISIT_SAFE}"
+  RUN_DIR="${RUNS_ROOT}/${DATASET_SAFE}"
+  PROJECT_NAME="rwddt_${USER_SAFE}_${DATASET_SAFE}"
 
-# Insert a do-not-commit banner at the top (compose tolerates comments)
-sed -i.bak '1i\
+  BASE_VISIT_DIR="$ROOTDIR/JWST/$PLANET/$VISIT"
+  ANALYSIS_DIR="$BASE_VISIT_DIR/$ANALYST"
+  NOTEBOOKS_DIR="$ANALYSIS_DIR/notebooks"
+
+  MAST_STAGE1_DIR="$BASE_VISIT_DIR/MAST_Stage1"
+  UNCAL_DIR="$BASE_VISIT_DIR/Uncalibrated"
+
+  # Create ONLY analyst tree
+  if command -v install >/dev/null 2>&1; then
+    install -d -m 2700 -g "$ANALYST_GID" "$ANALYSIS_DIR" "$NOTEBOOKS_DIR"
+  else
+    mkdir -p "$NOTEBOOKS_DIR"
+    chmod 2700 "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" || true
+  fi
+else
+  TS="$(date +%Y%m%d_%H%M%S)"
+  DATASET_SAFE="simple_${TS}"
+  RUN_DIR="${RUNS_ROOT}/${DATASET_SAFE}"
+  PROJECT_NAME="rwddt_${USER_SAFE}_${DATASET_SAFE}"
+
+  ANALYSIS_DIR=""
+  NOTEBOOKS_DIR=""
+  MAST_STAGE1_DIR=""
+  UNCAL_DIR=""
+fi
+
+mkdir -p "$RUN_DIR"
+
+OUTPUT_PATH="${RUN_DIR}/${OUTPUT_FILE}"
+STATE_PATH="${RUN_DIR}/${STATE_FILE}"
+WRAPPER_PATH="${RUN_DIR}/${WRAPPER}"
+
+# -----------------------------------------------------------------------------
+# Generate docker-compose.yml from template (both modes)
+# -----------------------------------------------------------------------------
+if [[ "$MODE" == "structured" ]]; then
+  cp "$STRUCT_TEMPLATE_PATH" "$OUTPUT_PATH"
+
+  sed -i.bak '1i\
 # -----------------------------------------------------------------------------\n\
 # This file was generated by configure_docker_compose.sh and may contain local \n\
-# absolute paths. Do not commit this file. Use docker-compose.template.yml for  \n\
+# absolute paths. Do not commit this file. Use docker-compose*.template.yml for \n\
 # shareable configuration.                                                     \n\
-# -----------------------------------------------------------------------------\n' "$OUTPUT_FILE"
+# -----------------------------------------------------------------------------\n' "$OUTPUT_PATH"
 
-# Replace placeholders
-sed -i.bak \
-  -e "s|<rootdir>|$ROOTDIR|g" \
-  -e "s|<planet>|$PLANET|g" \
-  -e "s|<visit>|$VISIT|g" \
-  -e "s|<analyst>|$ANALYST|g" \
-  -e "s|<hostport>|$HOST_PORT|g" \
-  -e "s|<uid>|$ANALYST_UID|g" \
-  -e "s|<gid>|$ANALYST_GID|g" \
-  -e "s|<crds_bind_mode>|$CRDS_BIND_MODE|g" \
-  -e "s|<crds_dir>|$CRDS_DIR|g" \
-  -e "s|<crds_target>|$CRDS_TARGET|g" \
-  -e "s|<crds_path>|$CRDS_PATH|g" \
-  "$OUTPUT_FILE"
+  # Uncomment optional mounts only if host dirs exist
+  if [[ -d "$MAST_STAGE1_DIR" ]]; then
+    uncomment_volume_line_for_placeholder "$OUTPUT_PATH" "mast_stage1_host"
+  fi
+  if [[ -d "$UNCAL_DIR" ]]; then
+    uncomment_volume_line_for_placeholder "$OUTPUT_PATH" "uncalibrated_host"
+  fi
 
-# Clean up backup
-rm -f "$OUTPUT_FILE.bak"
+  replace_placeholder "$OUTPUT_PATH" "analysis_dir_host" "$ANALYSIS_DIR"
+  replace_placeholder "$OUTPUT_PATH" "mast_stage1_host" "$MAST_STAGE1_DIR"
+  replace_placeholder "$OUTPUT_PATH" "uncalibrated_host" "$UNCAL_DIR"
+
+  replace_placeholder "$OUTPUT_PATH" "planet" "$PLANET"
+  replace_placeholder "$OUTPUT_PATH" "visit" "$VISIT"
+  replace_placeholder "$OUTPUT_PATH" "analyst" "$ANALYST"
+else
+  cp "$SIMPLE_TEMPLATE_PATH" "$OUTPUT_PATH"
+fi
+
+# Common placeholders for both modes
+replace_placeholder "$OUTPUT_PATH" "project_name" "$PROJECT_NAME"
+replace_placeholder "$OUTPUT_PATH" "hostport" "$HOST_PORT"
+replace_placeholder "$OUTPUT_PATH" "uid" "$ANALYST_UID"
+replace_placeholder "$OUTPUT_PATH" "gid" "$ANALYST_GID"
+replace_placeholder "$OUTPUT_PATH" "crds_bind_mode" "$CRDS_BIND_MODE"
+replace_placeholder "$OUTPUT_PATH" "crds_dir" "$CRDS_DIR"
+replace_placeholder "$OUTPUT_PATH" "crds_target" "$CRDS_TARGET"
+replace_placeholder "$OUTPUT_PATH" "crds_path" "$CRDS_PATH"
+
+rm -f "${OUTPUT_PATH}.bak"
+
+# -----------------------------------------------------------------------------
+# Write state file for wrapper
+# -----------------------------------------------------------------------------
+cat > "$STATE_PATH" <<EOF
+MODE=$MODE
+PROJECT_NAME=$PROJECT_NAME
+DATASET_SAFE=$DATASET_SAFE
+PLANET=$PLANET
+VISIT=$VISIT
+ANALYST=$ANALYST
+HOST_PORT=$HOST_PORT
+COMPOSE_FILE=$OUTPUT_PATH
+EOF
+
+# -----------------------------------------------------------------------------
+# Generate wrapper inside the run directory
+# -----------------------------------------------------------------------------
+cat > "$WRAPPER_PATH" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+HERE="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+cd "\$HERE"
+
+STATE_FILE="${STATE_FILE}"
+if [[ ! -f "\$STATE_FILE" ]]; then
+  echo "ERROR: \$STATE_FILE not found in \$HERE. Re-run configure_docker_compose.sh" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "\$STATE_FILE"
+
+DOCKER="docker"
+if ! docker info >/dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1; then
+    DOCKER="sudo docker"
+  fi
+fi
+
+DC="\${DOCKER} compose -p \${PROJECT_NAME} -f \${COMPOSE_FILE}"
+
+cmd="\${1:-}"; shift || true
+case "\$cmd" in
+  up)
+    \$DC up -d --pull missing
+    echo "Started: \${PROJECT_NAME}"
+    ;;
+  update)
+    \$DC up -d --pull always --force-recreate
+    echo "Updated: \${PROJECT_NAME}"
+    ;;
+  down)
+    \$DC down --remove-orphans
+    echo "Stopped: \${PROJECT_NAME}"
+    ;;
+  ps|status)
+    \$DC ps
+    ;;
+  logs)
+    echo "Tip: if the URL/token isn't shown yet, wait ~5–15 seconds and run './${WRAPPER} logs' again."
+    \$DC logs -f --tail=200
+    ;;
+  exec)
+    \$DC exec rwddt_eureka "\$@"
+    ;;
+  url)
+    echo "Project: \${PROJECT_NAME}"
+    echo "Host port -> container 8888: \${HOST_PORT}"
+    echo
+    echo "Forward it (example):"
+    echo "  ssh -L \${HOST_PORT}:localhost:\${HOST_PORT} <user>@<remote-host>"
+    echo "  (Keep that terminal open while you use JupyterLab; type 'exit' to close the tunnel.)"
+    echo "Then open:"
+    echo "  http://localhost:\${HOST_PORT}/"
+    ;;
+  *)
+    cat <<USAGE
+Usage: ./${WRAPPER} <command>
+
+Commands:
+  up        Start container (detached), pulls if missing
+  update    Pull newest image + force recreate
+  logs      Follow logs
+  url       Show port-forward + URL
+  ps        Status
+  exec ...  Run a command inside container (e.g. ./${WRAPPER} exec bash)
+  down      Stop/remove this dataset container
+USAGE
+    exit 1
+    ;;
+esac
+EOF
+
+chmod +x "$WRAPPER_PATH"
 
 GREEN='\033[1;32m'; NC='\033[0m'
-echo "Generated $OUTPUT_FILE with:"
-echo "  rootdir  = \"$ROOTDIR\""
-echo "  planet   = \"$PLANET\""
-echo "  visit    = \"$VISIT\""
-echo "  analyst  = \"$ANALYST\""
-echo "  hostport = \"$HOST_PORT\""
-echo "  analyst UID = \"$ANALYST_UID\""
-echo "  group   GID = \"$ANALYST_GID\""
+echo "Generated run directory: $RUN_DIR"
+echo "  compose  = \"$OUTPUT_PATH\""
+echo "  state    = \"$STATE_PATH\""
+echo "  wrapper  = \"$WRAPPER_PATH\""
+echo
+echo "Project:"
+echo "  project     = \"$PROJECT_NAME\""
+echo "  hostport    = \"$HOST_PORT\""
 echo "  CRDS dir    = \"$CRDS_DIR\""
 echo "  CRDS layout = \"$CRDS_LAYOUT\""
 echo "  CRDS target = \"$CRDS_TARGET\" (container)"
 echo "  CRDS mode   = \"$CRDS_BIND_MODE\""
 echo
-echo "Created directories (2700) under: $BASE_VISIT_DIR"
-echo "  analysis  -> $ANALYSIS_DIR"
-echo "  notebooks -> $NOTEBOOKS_DIR"
-
+echo -e "${GREEN}Next steps:${NC}"
+echo "  cd \"$RUN_DIR\""
+echo "  ./$WRAPPER up"
+echo "  ./$WRAPPER logs   # shows Jupyter URL + token"
+echo "                 # (If it looks empty at first, wait ~5–15 seconds and run it again.)"
+echo "  ./$WRAPPER url    # prints ssh port-forward helper"
+echo "  ./$WRAPPER update # pull latest image + recreate"

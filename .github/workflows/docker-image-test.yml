@@ -30,13 +30,39 @@ jobs:
           docker run --rm --entrypoint "" rwddt_eureka:test \
           python -c 'import eureka, sys; print(getattr(eureka, "__version__", "unknown"))'
 
+      - name: Entrypoint sanity test - starts Jupyter + tmux and prints URL
+        run: |
+          set -euxo pipefail
+          NAME="rwddt_entrypoint_test"
+          PORT="18888"
+
+          # Start container using the real entrypoint. Use SIMPLE_MODE=1 to avoid host mounts.
+          # Use CRDS_MODE=remote so CRDS_PATH is not required in CI.
+          docker run -d --name "${NAME}" \
+            -p "${PORT}:8888" \
+            -e SIMPLE_MODE=1 \
+            -e CRDS_MODE=remote \
+            -e HOST_PORT="${PORT}" \
+            rwddt_eureka:test
+
+          # Give Jupyter a moment to start and logs to populate
+          sleep 30
+
+          # Check that entrypoint printed the access URL
+          docker logs "${NAME}" | grep -E "Access URL: http://localhost:${PORT}/\\?token=" >/dev/null
+
+          # Check that the tmux session exists (entrypoint runs Jupyter inside tmux)
+          docker exec "${NAME}" tmux has-session -t jlab
+
+          # Cleanup
+          docker rm -f "${NAME}"
 
       - name: Extract EUREKA_REF from Dockerfile ARG
         id: eureka_ref
         run: |
           set -euxo pipefail
           # Match: ARG EUREKA_REF=<sha> (7..40 hex chars), multi-line safe
-          REF="$(perl -0777 -ne 'print "$1\n" if /(?mi)^\s*ARG\s+EUREKA_REF\s*=\s*([0-9a-fA-F]{7,40})\b/' Dockerfile || true)"
+          REF="$(perl -0777 -ne 'print "$1\n" if /(?mi)^\s*ARG\s+EUREKA_REF\s*=\s*([0-9a-fA-F]{7,40})\b/' Dockerfile)"
           if [ -z "${REF}" ]; then
             echo "Could not extract ARG EUREKA_REF=<sha> from Dockerfile"
             exit 1

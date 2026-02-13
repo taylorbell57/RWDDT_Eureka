@@ -1,10 +1,10 @@
 FROM condaforge/mambaforge:24.9.2-0
 
-# Create a non-root user named rwddt with overrideable UID/GID
+# Create a non-root user named rwddt with overrideable UID/GID (idempotent)
 ARG NB_UID=1000
 ARG NB_GID=1000
-RUN groupadd -g ${NB_GID} rwddt || true && \
-    useradd -m -u ${NB_UID} -g ${NB_GID} -s /bin/bash rwddt
+RUN groupadd -g ${NB_GID} rwddt 2>/dev/null || true && \
+    id -u rwddt >/dev/null 2>&1 || useradd -m -u ${NB_UID} -g ${NB_GID} -s /bin/bash rwddt
 
 # Set working directory
 WORKDIR /home/rwddt
@@ -34,11 +34,12 @@ RUN printf '%s\n' \
   '  export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
   'fi' \
   > /etc/profile.d/99-ps1.sh
+
 RUN printf "%s\n" \
-'export PROMPT_DIRTRIM=2' \
-'export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
->> /home/rwddt/.bashrc && \
-    chown rwddt:rwddt /home/rwddt/.bashrc
+  'export PROMPT_DIRTRIM=2' \
+  'export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
+  >> /home/rwddt/.bashrc && \
+  chown rwddt:rwddt /home/rwddt/.bashrc
 
 # Pre-create user dirs and make them writable for any runtime UID/GID
 RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
@@ -77,18 +78,18 @@ p.write_text("\n".join([
     "import os",
     "c.IdentityProvider.token = os.environ.get('JUPYTER_TOKEN', '')",
 ]))
-print("Wrote", p)
+print(\"Wrote\", p)
 PY
 
 # JupyterLab default settings: autosave every 60 seconds
-# JupyterLab reads this file as a system-wide default (applies to all users)
 RUN mkdir -p /opt/conda/share/jupyter/lab/settings && \
-    printf '{\n  "@jupyterlab/docmanager-extension:plugin": {\n    "autosaveInterval": 60000\n  }\n}\n' \
+    printf '{\n  \"@jupyterlab/docmanager-extension:plugin\": {\n    \"autosaveInterval\": 60000\n  }\n}\n' \
       > /opt/conda/share/jupyter/lab/settings/overrides.json
 
-# Install Python and Eureka
+# Install Python and Eureka (no pip cache stored during build)
 RUN mamba install -y -c conda-forge python=3.13 && \
-    pip install "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}"
+    python -m pip install --no-cache-dir \
+      "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}"
 
 # Optional example notebooks via sparse checkout
 RUN if [ "${INCLUDE_NOTEBOOKS}" = "true" ]; then \
@@ -108,8 +109,10 @@ RUN if [ "${INCLUDE_NOTEBOOKS}" = "true" ]; then \
       chown -R rwddt:rwddt /opt/default_notebooks; \
     fi
 
-# Fix TLS loading issue for batman by preloading OpenMP library
-ENV LD_PRELOAD=/opt/conda/lib/libgomp.so.1
+# Clean caches to reduce final image size (does not remove installed packages)
+RUN mamba clean -a -f -y && \
+    python -m pip cache purge || true
+
 ENV PATH="/home/rwddt/.local/bin:${PATH}"
 ENV HOME=/home/rwddt
 ENV SHELL=/bin/bash
@@ -120,10 +123,6 @@ RUN chmod 1777 /home/rwddt
 
 # Ports and volumes
 EXPOSE 8888
-# CRDS can be either:
-#   /grp/crds (STScI split layout with /grp/crds/cache/jwst -> /grp/crds/jwst), or
-#   /crds     (community single-dir layout, often $HOME/crds_cache)
-VOLUME ["/mnt/rwddt", "/crds", "/grp/crds"]
 
 # Copy entrypoint
 COPY --chown=rwddt:rwddt entrypoint.sh /home/rwddt/entrypoint.sh
@@ -139,4 +138,3 @@ LABEL org.opencontainers.image.title="RW-DDT Eureka! Container" \
       org.opencontainers.image.documentation="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.licenses-url="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/LICENSE"
-
