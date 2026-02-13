@@ -28,13 +28,48 @@ jobs:
         run: |
           set -euxo pipefail
           docker run --rm --entrypoint "" rwddt_eureka:test \
-          python -c 'import eureka, sys; print(getattr(eureka, "__version__", "unknown"))'
+            python -c 'import eureka, sys; print(getattr(eureka, "__version__", "unknown"))'
+
+      - name: Wrapper sanity test (Simple Mode) - configure + rwddt-run up/down
+        run: |
+          set -euxo pipefail
+
+          # Generate a simple-mode run directory (no host data structure required).
+          # Use a temp CRDS cache directory to ensure the bind mount exists in CI.
+          ./configure_docker_compose.sh --simple /tmp/crds_cache single
+
+          # Find the newest runs/simple_* directory
+          RUNDIR="$(ls -dt runs/simple_* | head -n 1)"
+          cd "$RUNDIR"
+
+          # Use the locally built image rather than pulling from DockerHub
+          export IMAGE="rwddt_eureka:test"
+
+          # Avoid requiring a local CRDS cache for the entrypoint checks
+          export CRDS_MODE="remote"
+
+          # Ensure cleanup even if a later check fails
+          trap 'set +e; ./rwddt-run down || true; cd - >/dev/null 2>&1 || true' EXIT
+
+          ./rwddt-run up
+
+          # Give logs a moment to populate (Jupyter startup can take a bit)
+          sleep 30
+
+          # Confirm the entrypoint printed the access URL line
+          ./rwddt-run logs | grep -E "Access URL: http://localhost:[0-9]+/\\?token=" >/dev/null
+
+          # Stop the stack cleanly (trap also covers failures)
+          ./rwddt-run down
 
       - name: Entrypoint sanity test - starts Jupyter + tmux and prints URL
         run: |
           set -euxo pipefail
           NAME="rwddt_entrypoint_test"
           PORT="18888"
+
+          # Always clean up this container even if the test fails part-way through
+          trap 'set +e; docker rm -f "${NAME}" >/dev/null 2>&1 || true' EXIT
 
           # Start container using the real entrypoint. Use SIMPLE_MODE=1 to avoid host mounts.
           # Use CRDS_MODE=remote so CRDS_PATH is not required in CI.
@@ -53,9 +88,6 @@ jobs:
 
           # Check that the tmux session exists (entrypoint runs Jupyter inside tmux)
           docker exec "${NAME}" tmux has-session -t jlab
-
-          # Cleanup
-          docker rm -f "${NAME}"
 
       - name: Extract EUREKA_REF from Dockerfile ARG
         id: eureka_ref
