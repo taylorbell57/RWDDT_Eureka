@@ -32,13 +32,33 @@ The container provides:
 
 ## Files you need
 
-From this repository:
+You will need several files from this repo, so you are best-off
+running everything from a local checkout of this repository.
 
-- `configure_docker_compose.sh` — generates a per-dataset run directory under `./runs/`.
-- `templates/docker-compose.template.yml` — template used for **Structured Mode**.
-- `templates/docker-compose.simple.template.yml` — template used for **Simple Mode**.
+### Option A: Clone with git (recommended)
 
-**Do not copy these files into your data directories.** Run the script from the repository checkout.
+```bash
+git clone https://github.com/taylorbell57/RWDDT_Eureka.git
+cd RWDDT_Eureka
+```
+
+### Option B: Download a ZIP
+
+Use the GitHub **Code → Download ZIP** button, unzip it, and `cd` into the extracted folder.
+
+### Then configure a run
+
+From the repository root:
+
+```bash
+# Structured mode
+./configure_docker_compose.sh <rootdir> <planet> <visit> <analyst> [<crds_dir>] [split|single]
+
+# Simple mode
+./configure_docker_compose.sh --simple [<crds_dir>] [split|single]
+```
+
+This will generate a run directory under `runs/` containing a generated `docker-compose.yml`, a `.rwddt_state` metadata file, and a `rwddt-run` wrapper script.
 
 ---
 
@@ -144,7 +164,7 @@ By default, Simple Mode does **not** mount a host workspace. To persist your not
 mkdir -p $HOME/rwddt_simple_work/{notebooks,analysis}
 ```
 
-2) Edit the generated `runs/simple_YYYYmmdd_HHMMSS/docker-compose.yml` **before** starting (or run `./rwddt-run down` first if already running), and add these mounts under `services: -> rwddt_eureka: -> volumes:`:
+2) Edit the generated `runs/simple_YYYYmmdd_HHMMSS/docker-compose.yml` **before** starting (or run `./rwddt-run down` first if already running), and add these mounts under `services -> rwddt_eureka -> volumes`:
 
 ```yaml
       - $HOME/rwddt_simple_work/notebooks:/home/rwddt/notebooks:rw
