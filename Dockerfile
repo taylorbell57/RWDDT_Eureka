@@ -4,7 +4,7 @@ FROM condaforge/mambaforge:24.9.2-0
 ARG NB_UID=1000
 ARG NB_GID=1000
 RUN groupadd -g ${NB_GID} rwddt 2>/dev/null || true && \
-    id -u rwddt >/dev/null 2>&1 || useradd -m -u ${NB_UID} -g ${NB_GID} -s /bin/bash rwddt
+    (id -u rwddt >/dev/null 2>&1 || useradd -m -u ${NB_UID} -g ${NB_GID} -s /bin/bash rwddt)
 
 # Set working directory
 WORKDIR /home/rwddt

@@ -208,7 +208,7 @@ echo -e "${GREEN}   (Keep that terminal open while you use JupyterLab; type 'exi
 echo -e "${GREEN}====================================================================${NC}"
 echo
 echo "To attach to the persistent Jupyter tmux session inside the container:"
-echo "  ./rwddt-run exec tmux attach -t $SESSION"
+echo "  From the host, in your run directory: ./rwddt-run exec tmux attach -t $SESSION"
 echo "Detach from tmux with Ctrl-b then d."
 
 # Keep PID 1 alive while tmux session exists
