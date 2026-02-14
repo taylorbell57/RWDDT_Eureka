@@ -306,11 +306,22 @@ fi
 # shellcheck disable=SC1090
 source "\$STATE_FILE"
 
+# Use sudo only if required (helps community users who can run docker without sudo)
 DOCKER="docker"
+NEED_SUDO_MSG=0
+
 if ! docker info >/dev/null 2>&1; then
   if command -v sudo >/dev/null 2>&1; then
     DOCKER="sudo docker"
+    NEED_SUDO_MSG=1
   fi
+fi
+
+# If we will be using sudo for Docker, warn before the sudo authentication prompt
+if [[ "\$NEED_SUDO_MSG" -eq 1 ]]; then
+  echo "Note: Docker requires elevated privileges on this host." >&2
+  echo "      This command will run Docker via sudo and you may be prompted for your password." >&2
+  echo "      (This is expected on shared systems where Docker is restricted.)" >&2
 fi
 
 DC="\${DOCKER} compose -p \${PROJECT_NAME} -f \${COMPOSE_FILE}"
@@ -393,6 +404,8 @@ echo -e "${GREEN}Next steps:${NC}"
 echo "  cd \"$RUN_DIR\""
 echo "  ./$WRAPPER up"
 echo "  ./$WRAPPER logs   # shows Jupyter URL + token"
-echo "                 # (If it looks empty at first, wait ~5–15 seconds and run it again.)"
+echo "                     # (If it looks empty at first, wait ~5–15 seconds and run it again.)"
 echo "  ./$WRAPPER url    # prints ssh port-forward helper"
+echo
+echo "If you need to update the Docker image to a new version:"
 echo "  ./$WRAPPER update # pull latest image + recreate"
