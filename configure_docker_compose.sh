@@ -334,7 +334,13 @@ case "\$cmd" in
     ;;
   logs)
     echo "Tip: if the URL/token isn't shown yet, wait ~5–15 seconds and run './${WRAPPER} logs' again."
-    \$DC logs -f --tail=200
+    # If stdout is a terminal, follow logs. If piped/non-interactive, print a finite tail and exit.
+    if [ -t 1 ]; then
+      \$DC logs -f --tail=200
+    else
+      \$DC logs --tail=200
+    fi
+
     ;;
   exec)
     \$DC exec rwddt_eureka "\$@"
