@@ -1,10 +1,10 @@
 FROM condaforge/mambaforge:24.9.2-0
 
-# Create a non-root user named rwddt with overrideable UID/GID
+# Create a non-root user named rwddt with overrideable UID/GID (idempotent)
 ARG NB_UID=1000
 ARG NB_GID=1000
-RUN groupadd -g ${NB_GID} rwddt || true && \
-    useradd -m -u ${NB_UID} -g ${NB_GID} -s /bin/bash rwddt
+RUN groupadd -g ${NB_GID} rwddt 2>/dev/null || true && \
+    (id -u rwddt >/dev/null 2>&1 || useradd -m -u ${NB_UID} -g ${NB_GID} -s /bin/bash rwddt)
 
 # Set working directory
 WORKDIR /home/rwddt
@@ -28,17 +28,29 @@ RUN apt-get update && \
         build-essential git curl ca-certificates libnss-wrapper htop tmux && \
     rm -rf /var/lib/apt/lists/*
 
-# Friendly prompt for interactive shells
-RUN printf '%s\n' \
-  'if [ -n "$PS1" ]; then' \
-  '  export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
-  'fi' \
-  > /etc/profile.d/99-ps1.sh
-RUN printf "%s\n" \
-'export PROMPT_DIRTRIM=2' \
-'export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
->> /home/rwddt/.bashrc && \
-    chown rwddt:rwddt /home/rwddt/.bashrc
+# -------------------------------------------------------------------
+# Static configuration files (tracked in repo under etc/)
+# -------------------------------------------------------------------
+
+# Global interactive shell prompt
+COPY etc/profile.d/99-ps1.sh /etc/profile.d/99-ps1.sh
+
+# Append bashrc defaults for rwddt user
+COPY etc/skel/rwddt.bashrc.append /tmp/rwddt.bashrc.append
+RUN cat /tmp/rwddt.bashrc.append >> /home/rwddt/.bashrc && \
+    chown rwddt:rwddt /home/rwddt/.bashrc && \
+    rm -f /tmp/rwddt.bashrc.append
+
+# tmux defaults (optional but recommended)
+COPY etc/tmux/tmux.conf /etc/tmux.conf
+
+# Jupyter Server config (global)
+RUN mkdir -p /etc/jupyter
+COPY etc/jupyter/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
+
+# JupyterLab defaults (system-wide)
+RUN mkdir -p /opt/conda/share/jupyter/lab/settings
+COPY etc/jupyter/lab/overrides.json /opt/conda/share/jupyter/lab/settings/overrides.json
 
 # Pre-create user dirs and make them writable for any runtime UID/GID
 RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
@@ -47,48 +59,10 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
              /home/rwddt/.config && \
     chmod -R 0777 /home/rwddt/.jupyter /home/rwddt/.local /home/rwddt/.config
 
-# Jupyter Server 2.x config, placed in a global location
-RUN mkdir -p /etc/jupyter && \
-    python - <<'PY'
-from pathlib import Path
-p = Path("/etc/jupyter/jupyter_server_config.py")
-p.write_text("\n".join([
-    "c = get_config()",
-    "# Keep server and kernels alive indefinitely",
-    "c.ServerApp.shutdown_no_activity_timeout = 0",
-    "c.MappingKernelManager.cull_idle_timeout = 0",
-    "c.MappingKernelManager.cull_interval = 0",
-    "c.MappingKernelManager.cull_connected = False",
-    "c.MappingKernelManager.cull_busy = False",
-    "",
-    "# High IOPub limits (new location in Jupyter Server 2.x)",
-    "c.ZMQChannelsWebsocketConnection.iopub_msg_rate_limit = 1.0e12",
-    "c.ZMQChannelsWebsocketConnection.rate_limit_window = 1.0",
-    "",
-    "# WebSocket keepalives: silence timeout>interval warning",
-    "c.ServerApp.websocket_ping_interval = 30000   # ms",
-    "c.ServerApp.websocket_ping_timeout  = 30000   # ms",
-    "c.ZMQChannelsWebsocketConnection.websocket_ping_interval = 30000",
-    "c.ZMQChannelsWebsocketConnection.websocket_ping_timeout  = 30000",
-    "c.TerminalsWebsocketConnection.websocket_ping_interval = 30000",
-    "c.TerminalsWebsocketConnection.websocket_ping_timeout  = 30000",
-    "",
-    "# Token is provided via env; entrypoint exports JUPYTER_TOKEN",
-    "import os",
-    "c.IdentityProvider.token = os.environ.get('JUPYTER_TOKEN', '')",
-]))
-print("Wrote", p)
-PY
-
-# JupyterLab default settings: autosave every 60 seconds
-# JupyterLab reads this file as a system-wide default (applies to all users)
-RUN mkdir -p /opt/conda/share/jupyter/lab/settings && \
-    printf '{\n  "@jupyterlab/docmanager-extension:plugin": {\n    "autosaveInterval": 60000\n  }\n}\n' \
-      > /opt/conda/share/jupyter/lab/settings/overrides.json
-
-# Install Python and Eureka
+# Install Python and Eureka (no pip cache stored during build)
 RUN mamba install -y -c conda-forge python=3.13 && \
-    pip install "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}"
+    python -m pip install --no-cache-dir \
+      "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}"
 
 # Optional example notebooks via sparse checkout
 RUN if [ "${INCLUDE_NOTEBOOKS}" = "true" ]; then \
@@ -108,8 +82,10 @@ RUN if [ "${INCLUDE_NOTEBOOKS}" = "true" ]; then \
       chown -R rwddt:rwddt /opt/default_notebooks; \
     fi
 
-# Fix TLS loading issue for batman by preloading OpenMP library
-ENV LD_PRELOAD=/opt/conda/lib/libgomp.so.1
+# Clean caches to reduce final image size (does not remove installed packages)
+RUN mamba clean -a -f -y && \
+    python -m pip cache purge || true
+
 ENV PATH="/home/rwddt/.local/bin:${PATH}"
 ENV HOME=/home/rwddt
 ENV SHELL=/bin/bash
@@ -118,12 +94,8 @@ ENV CONDA_ENV=base
 # Make sure /home/rwddt is accessible by the external user's UID/GID
 RUN chmod 1777 /home/rwddt
 
-# Ports and volumes
+# Ports
 EXPOSE 8888
-# CRDS can be either:
-#   /grp/crds (STScI split layout with /grp/crds/cache/jwst -> /grp/crds/jwst), or
-#   /crds     (community single-dir layout, often $HOME/crds_cache)
-VOLUME ["/mnt/rwddt", "/crds", "/grp/crds"]
 
 # Copy entrypoint
 COPY --chown=rwddt:rwddt entrypoint.sh /home/rwddt/entrypoint.sh

@@ -122,12 +122,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push (single build, multiple tags)
-        run: |
-          TAG_ARGS=$(awk '{print "-t", $0}' <<< "${{ steps.ver.outputs.list }}")
-          set -x
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --push \
-            ${TAG_ARGS} \
-            .
-
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.ver.outputs.list }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

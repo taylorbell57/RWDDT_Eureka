@@ -1,6 +1,12 @@
 # RW-DDT Eureka! Container
 
-This repository provides a containerized JupyterLab environment for analyzing JWST data with the [Eureka!](https://github.com/kevin218/Eureka) pipeline. The setup is designed for both STScI staff and the wider research community, with flexibility for local and remote deployments.
+This repository provides a containerized **JupyterLab** environment for analyzing JWST data with the **[Eureka!](https://github.com/kevin218/Eureka)** pipeline.
+
+- Works on shared institutional compute and personal/community machines.
+- You provide local paths at runtime using the configuration script.
+- Generates a `runs/**/docker-compose.yml` file that contains local absolute paths and **must not be committed**.
+
+> **Migration note (breaking change):** If you previously ran `docker compose up` from inside an analyst directory, re-run `./configure_docker_compose.sh` from the repository root. The new workflow generates a per-run directory under `runs/` and you manage the container via `./rwddt-run up/logs/exec/down`.
 
 ---
 
@@ -8,174 +14,260 @@ This repository provides a containerized JupyterLab environment for analyzing JW
 
 The container provides:
 
-* A fully-configured JupyterLab environment with Eureka! preinstalled.
-* Automatic linking of analysis, notebooks, and input data directories.
-* Support for both split-layout CRDS (used at STScI) and single-layout CRDS caches (typical for community use).
-* Automatic seeding of example notebooks if none exist.
-* A generated Jupyter access URL (with token) printed at startup.
+- A fully configured JupyterLab environment with Eureka! preinstalled.
+- Automatic linking of analysis, notebooks, and (optional) input data directories into a stable in-container layout under `/home/rwddt/*`.
+- Support for both **split-layout** CRDS (common on institutional systems) and **single-layout** CRDS caches (common for community use).
+- Automatic seeding of example notebooks if none exist.
+- A generated Jupyter access URL (with token) printed at startup.
 
 ---
 
-## Required Files
+## Prerequisites
 
-Before running the container, you need two configuration files from this repository:
-
-* `configure_docker_compose.sh` – Generates a personalized `docker-compose.yml` for your analysis session.
-* `docker-compose.template.yml` – A template used by the script.
-
-### Placement
-
-Store both files inside your `<analyst>` folder. All commands should be run from within this folder. For example:
-
-```
-<rootdir>/JWST/<planet>/<visit>/<analyst>/
-├── configure_docker_compose.sh
-└── docker-compose.template.yml
-```
+- Docker Engine installed and running.
+- Docker Compose v2 available via `docker compose`.
+- Permission to run Docker (either in the `docker` group or via `sudo`).
 
 ---
 
-## Folder Structure
+## Files you need
 
-The container supports different layouts depending on whether you are at STScI or working externally.
+You will need several files from this repo, so you are best-off
+running everything from a local checkout of this repository.
 
-### STScI Staff
+### Option A: Clone with git (recommended)
 
-STScI staff should use the established shared root directory for RW-DDT work. The structure is:
-
+```bash
+git clone https://github.com/taylorbell57/RWDDT_Eureka.git
+cd RWDDT_Eureka
 ```
+
+### Option B: Download a ZIP
+
+Use the GitHub **Code → Download ZIP** button, unzip it, and `cd` into the extracted folder.
+
+### Then configure a run
+
+From the repository root:
+
+```bash
+# Structured mode
+./configure_docker_compose.sh <rootdir> <planet> <visit> <analyst> [<crds_dir>] [split|single]
+
+# Simple mode
+./configure_docker_compose.sh --simple [<crds_dir>] [split|single]
+```
+
+This will generate a run directory under `runs/` containing a generated `docker-compose.yml`, a `.rwddt_state` metadata file, and a `rwddt-run` wrapper script.
+
+---
+
+## Folder structure (Structured Mode)
+
+Structured mode expects your host filesystem to look like:
+
+```text
 <rootdir>/JWST/<planet>/<visit>/
 ├── <analyst>/
-│   ├── notebooks/           # Analyst's personal notebooks
-│   └── outputs/             # Other products and analysis files
-├── Uncalibrated/            # Shared Stage 0 data (read-only)
-└── MAST_Stage1/             # Shared Stage 1 data (read-only)
+│   └── notebooks/
+├── MAST_Stage1/        (optional)
+└── Uncalibrated/       (optional)
 ```
 
-CRDS is accessed in split-layout mode.
+Notes:
 
-### Community Members
-
-Community members have two options:
-
-1. **Structured layout (recommended for collaboration):**
-
-   ```
-   <rootdir>/JWST/<planet>/<visit>/
-   ├── <analyst>/
-   │   ├── notebooks/           # Analyst's personal notebooks
-   │   └── outputs/             # Other products and analysis files
-   ├── Uncalibrated/            # Shared Stage 0 data (optional)
-   └── MAST_Stage1/             # Shared Stage 1 data (optional)
-   ```
-
-   By default, CRDS is expected at `$HOME/crds_cache` in single-layout mode.
-
-2. **Simplified mode:** If you prefer not to set up the above directory structure, set `SIMPLE_MODE=1` when starting the container. In this case, the container creates a generic workspace under `/home/rwddt/work` with subdirectories for notebooks, analysis, and inputs. This is convenient for quick tests or local exploration.
-
-   ```bash
-   SIMPLE_MODE=1 docker compose up -d
-   ```
-
-   You must still run this command from the directory containing your `docker-compose.yml` (normally your `<analyst>` folder).
-
-   **Warning:** In simplified mode, the workspace lives only inside the container. Data is not written to your host filesystem and will be lost if the container is removed. Use this mode only for temporary or test runs unless you manually configure additional host volume mounts.
+- The script will create `<rootdir>/JWST/<planet>/<visit>/<analyst>/notebooks/` if needed.
+- `MAST_Stage1` and `Uncalibrated` are **optional** for community users.
+- `MAST_Stage1` and `Uncalibrated` are mounted automatically **only if those directories exist** on the host at configure time.
 
 ---
 
-## 1. Configure the Container
+## Mount & isolation model (Structured Mode)
 
-From your `<analyst>` folder, run:
+To keep notebooks simple **and** prevent analysts from seeing each other’s work:
+
+- The container bind-mounts **only what is needed**:
+  - the analyst folder (read/write)
+  - `MAST_Stage1` (read-only, **only if it exists on the host**)
+  - `Uncalibrated` (read-only, **only if it exists on the host**)
+- Inside the container, stable paths are provided via symlinks:
+  - `/home/rwddt/analysis` → your analyst folder
+  - `/home/rwddt/notebooks` → your notebooks
+  - `/home/rwddt/MAST_Stage1` and `/home/rwddt/Uncalibrated` → input folders (or empty dirs if not present)
+
+---
+
+## 1) Configure the container
+
+### Structured mode (recommended)
+
+From the repository root:
 
 ```bash
 ./configure_docker_compose.sh <rootdir> <planet> <visit> <analyst> [<crds_dir>] [split|single]
 ```
 
+Example (community single-layout CRDS):
+
+```bash
+./configure_docker_compose.sh $HOME/data TOI-1234b visit1 Analyst_A $HOME/crds_cache single
+```
+
+This creates:
+
+```text
+runs/<planet>_<visit>/
+├── docker-compose.yml
+├── .rwddt_state
+└── rwddt-run
+```
+
+### Simple mode (quick tests)
+
+Simple mode is for quick tests when you **don’t** want to create a host directory tree.
+By default, work lives inside the container and is **not persisted** if the container is removed.
+
+From the repository root:
+
+```bash
+./configure_docker_compose.sh --simple [<crds_dir>] [split|single]
+```
+
 Examples:
 
-* STScI staff:
-
-  ```bash
-  ./configure_docker_compose.sh <rootdir> TOI-1234b visit1 Analyst_A /grp/crds split
-  ```
-
-* Community researcher:
-
-  ```bash
-  ./configure_docker_compose.sh $HOME/data TOI-1234b visit1 Analyst_A $HOME/crds_cache single
-  ```
-
-This generates a `docker-compose.yml` customized for your environment. Do **not** commit this file; it contains local absolute paths.
-
----
-
-## 2. Start the Container
-
-Once you have generated your `docker-compose.yml`, start JupyterLab **from within your `<analyst>` folder**:
-
 ```bash
-docker compose up -d
+# Community single-layout CRDS
+./configure_docker_compose.sh --simple $HOME/crds_cache single
+
+# Institutional split-layout CRDS
+./configure_docker_compose.sh --simple /path/to/crds split
 ```
 
-The container will:
+This creates:
 
-* Run in the background and persist after disconnect.
-* Find a free port automatically.
-* Print the access URL with token.
-
-To enable simplified mode, prefix the command with `SIMPLE_MODE=1`:
-
-```bash
-SIMPLE_MODE=1 docker compose up -d
+```text
+runs/simple_YYYYmmdd_HHMMSS/
+├── docker-compose.yml
+├── .rwddt_state
+└── rwddt-run
 ```
 
 ---
 
-## 3. Access JupyterLab
+## Persisting work in Simple Mode (recommended add-on)
 
-To view the access URL:
+By default, Simple Mode does **not** mount a host workspace. To persist your notebooks and analysis:
 
-```bash
-docker logs rwddt_<planet>_<visit>_<analyst>
-```
-
-Open the URL in your browser. If running on a remote server, forward the port first, for example:
+1) Create a host workspace directory (example):
 
 ```bash
-ssh -L <hostport>:localhost:<hostport> user@remote.server
+mkdir -p $HOME/rwddt_simple_work/{notebooks,analysis}
 ```
+
+2) Edit the generated `runs/simple_YYYYmmdd_HHMMSS/docker-compose.yml` **before** starting (or run `./rwddt-run down` first if already running), and add these mounts under `services -> rwddt_eureka -> volumes`:
+
+```yaml
+      - $HOME/rwddt_simple_work/notebooks:/home/rwddt/notebooks:rw
+      - $HOME/rwddt_simple_work/analysis:/home/rwddt/analysis:rw
+```
+
+3) Start (or restart) the run:
+
+```bash
+cd runs/simple_YYYYmmdd_HHMMSS
+./rwddt-run up
+```
+
+> Tip: Structured Mode is still the best choice for collaboration and consistent shared host layout; Simple Mode persistence is intended for quick, self-contained experiments.
+
+---
+
+## 2) Start the container
+
+Change into the run directory and start:
+
+```bash
+cd runs/<planet>_<visit>
+./rwddt-run up
+```
+
+For simple mode:
+
+```bash
+cd runs/simple_YYYYmmdd_HHMMSS
+./rwddt-run up
+```
+
+---
+
+## 3) Access JupyterLab
+
+### View the access URL
+
+```bash
+./rwddt-run logs
+```
+
+If the URL/token doesn’t appear immediately, wait ~5–15 seconds and run `./rwddt-run logs` again.
+
+### Remote host port-forwarding
+
+If Docker is running on a remote host, you'll need to set up SSH-based port forwarding using the
+command provided in the Docker logs that will look something like:
+
+```bash
+ssh -L <hostport>:localhost:<hostport> <user>@<remote-host>
+```
+
+Keep that terminal open while you use JupyterLab; type `exit` to close the tunnel when finished.
+
+---
+
+## Updating to the newest DockerHub image version
+
+```bash
+./rwddt-run update
+```
+
+---
+
+## Stopping the container
+
+```bash
+./rwddt-run down
+```
+
+---
+
+## Optional environment overrides
+
+These can be set in your shell before running `./rwddt-run up`:
+
+- `IMAGE` — override which container image to run (useful for local builds).
+- `CRDS_MODE=remote` — run without requiring a local CRDS cache directory on the host (uses the CRDS server).
 
 ---
 
 ## Troubleshooting
 
-* If no URL is printed, wait a few seconds and re-check with `docker logs`.
-* If your notebooks directory is empty on first run, default example notebooks are copied in automatically.
-* To stop your container:
-
-  ```bash
-  docker compose down
-  ```
+- **No URL printed yet:** wait a few seconds and re-run `./rwddt-run logs`.
+- **Permission denied writing files:** ensure your `<analyst>` directory is writable by your host user (and group, if applicable).
+- **Two datasets at once:** each dataset gets its own run directory under `runs/`; start each from its own run directory.
 
 ---
 
-## Notes
+## Notes (inside the container)
 
-* Inside the container:
-
-| Container Path              | Purpose                           |
-| --------------------------- | --------------------------------- |
-| `/home/rwddt/notebooks/`    | Editable notebooks                |
-| `/home/rwddt/analysis/`     | Analyst writable area             |
-| `/home/rwddt/MAST_Stage1/`  | Shared Stage 1 inputs (read-only) |
-| `/home/rwddt/Uncalibrated/` | Shared Stage 0 inputs (read-only) |
-
-* The container always runs as an unprivileged `rwddt` user.
-* CRDS configuration depends on your layout choice (split vs. single).
+| Container Path              | Purpose                                           |
+|----------------------------|---------------------------------------------------|
+| `/home/rwddt/notebooks/`   | Editable notebooks                                |
+| `/home/rwddt/analysis/`    | Analyst writable area                             |
+| `/home/rwddt/MAST_Stage1/` | Shared Stage 1 inputs (RO if present; else empty) |
+| `/home/rwddt/Uncalibrated/`| Shared Stage 0 inputs (RO if present; else empty) |
 
 ---
 
 ## Support
 
-If you encounter issues, please contact the RW-DDT team lead (Taylor Bell; @taylorbell57).
+If you encounter issues, please contact the RW-DDT JWST Data Analysis team lead (Taylor Bell; @taylorbell57).
 
