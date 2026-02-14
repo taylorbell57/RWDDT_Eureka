@@ -49,37 +49,8 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
     chmod -R 0777 /home/rwddt/.jupyter /home/rwddt/.local /home/rwddt/.config
 
 # Jupyter Server 2.x config, placed in a global location
-RUN mkdir -p /etc/jupyter && \
-    python - <<'PY'
-from pathlib import Path
-p = Path("/etc/jupyter/jupyter_server_config.py")
-p.write_text("\n".join([
-    "c = get_config()",
-    "# Keep server and kernels alive indefinitely",
-    "c.ServerApp.shutdown_no_activity_timeout = 0",
-    "c.MappingKernelManager.cull_idle_timeout = 0",
-    "c.MappingKernelManager.cull_interval = 0",
-    "c.MappingKernelManager.cull_connected = False",
-    "c.MappingKernelManager.cull_busy = False",
-    "",
-    "# High IOPub limits (new location in Jupyter Server 2.x)",
-    "c.ZMQChannelsWebsocketConnection.iopub_msg_rate_limit = 1.0e12",
-    "c.ZMQChannelsWebsocketConnection.rate_limit_window = 1.0",
-    "",
-    "# WebSocket keepalives: silence timeout>interval warning",
-    "c.ServerApp.websocket_ping_interval = 30000   # ms",
-    "c.ServerApp.websocket_ping_timeout  = 30000   # ms",
-    "c.ZMQChannelsWebsocketConnection.websocket_ping_interval = 30000",
-    "c.ZMQChannelsWebsocketConnection.websocket_ping_timeout  = 30000",
-    "c.TerminalsWebsocketConnection.websocket_ping_interval = 30000",
-    "c.TerminalsWebsocketConnection.websocket_ping_timeout  = 30000",
-    "",
-    "# Token is provided via env; entrypoint exports JUPYTER_TOKEN",
-    "import os",
-    "c.IdentityProvider.token = os.environ.get('JUPYTER_TOKEN', '')",
-]))
-print(\"Wrote\", p)
-PY
+RUN mkdir -p /etc/jupyter
+COPY jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
 
 # JupyterLab default settings: autosave every 60 seconds
 RUN mkdir -p /opt/conda/share/jupyter/lab/settings && \
@@ -138,3 +109,4 @@ LABEL org.opencontainers.image.title="RW-DDT Eureka! Container" \
       org.opencontainers.image.documentation="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.licenses-url="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/LICENSE"
+

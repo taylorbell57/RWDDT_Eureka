@@ -69,7 +69,6 @@ uncomment_volume_line_for_placeholder() {
   local key="$2"
   sed -i.bak -E \
     -e "s|^([[:space:]]*)#([[:space:]]*-[[:space:]]*<${key}>:)|\\1\\2|" \
-    -e "s|^([[:space:]]*)#([[:space:]]*-[[:space:]]*&lt;${key}&gt;:)|\\1\\2|" \
     "$file"
 }
 
