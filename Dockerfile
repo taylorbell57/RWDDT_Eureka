@@ -50,7 +50,7 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
 
 # Jupyter Server 2.x config, placed in a global location
 RUN mkdir -p /etc/jupyter
-COPY config/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
+COPY etc/docker/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
 
 # JupyterLab default settings: autosave every 60 seconds
 RUN mkdir -p /opt/conda/share/jupyter/lab/settings && \

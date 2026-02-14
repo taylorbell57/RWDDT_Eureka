@@ -74,6 +74,7 @@ jobs:
           # Start container using the real entrypoint. Use SIMPLE_MODE=1 to avoid host mounts.
           # Use CRDS_MODE=remote so CRDS_PATH is not required in CI.
           docker run -d --name "${NAME}" \
+            --user 1000:1000 \
             -p "${PORT}:8888" \
             -e SIMPLE_MODE=1 \
             -e CRDS_MODE=remote \
