@@ -6,6 +6,8 @@ This repository provides a containerized **JupyterLab** environment for analyzin
 - You provide local paths at runtime using the configuration script.
 - Generates a `runs/**/docker-compose.yml` file that contains local absolute paths and **must not be committed**.
 
+> **Migration note (breaking change):** If you previously ran `docker compose up` from inside an analyst directory, re-run `./configure_docker_compose.sh` from the repository root. The new workflow generates a per-run directory under `runs/` and you manage the container via `./rwddt-run up/logs/exec/down`.
+
 ---
 
 ## Overview
@@ -20,12 +22,21 @@ The container provides:
 
 ---
 
+## Prerequisites
+
+- Docker Engine installed and running.
+- Docker Compose v2 available via `docker compose`.
+- Permission to run Docker (either in the `docker` group or via `sudo`).
+
+---
+
 ## Files you need
 
 From this repository:
 
 - `configure_docker_compose.sh` — generates a per-dataset run directory under `./runs/`.
-- `docker-compose.template.yml` — the template used by the script.
+- `templates/docker-compose.template.yml` — template used for **Structured Mode**.
+- `templates/docker-compose.simple.template.yml` — template used for **Simple Mode**.
 
 **Do not copy these files into your data directories.** Run the script from the repository checkout.
 
@@ -47,6 +58,7 @@ Notes:
 
 - The script will create `<rootdir>/JWST/<planet>/<visit>/<analyst>/notebooks/` if needed.
 - `MAST_Stage1` and `Uncalibrated` are **optional** for community users.
+- `MAST_Stage1` and `Uncalibrated` are mounted automatically **only if those directories exist** on the host at configure time.
 
 ---
 
@@ -59,7 +71,7 @@ To keep notebooks simple **and** prevent analysts from seeing each other’s wor
   - `MAST_Stage1` (read-only, **only if it exists on the host**)
   - `Uncalibrated` (read-only, **only if it exists on the host**)
 - Inside the container, stable paths are provided via symlinks:
-  - `/home/rwddt/analysis`  → your analyst folder
+  - `/home/rwddt/analysis` → your analyst folder
   - `/home/rwddt/notebooks` → your notebooks
   - `/home/rwddt/MAST_Stage1` and `/home/rwddt/Uncalibrated` → input folders (or empty dirs if not present)
 
@@ -122,6 +134,34 @@ runs/simple_YYYYmmdd_HHMMSS/
 
 ---
 
+## Persisting work in Simple Mode (recommended add-on)
+
+By default, Simple Mode does **not** mount a host workspace. To persist your notebooks and analysis:
+
+1) Create a host workspace directory (example):
+
+```bash
+mkdir -p $HOME/rwddt_simple_work/{notebooks,analysis}
+```
+
+2) Edit the generated `runs/simple_YYYYmmdd_HHMMSS/docker-compose.yml` **before** starting (or run `./rwddt-run down` first if already running), and add these mounts under `services: -> rwddt_eureka: -> volumes:`:
+
+```yaml
+      - $HOME/rwddt_simple_work/notebooks:/home/rwddt/notebooks:rw
+      - $HOME/rwddt_simple_work/analysis:/home/rwddt/analysis:rw
+```
+
+3) Start (or restart) the run:
+
+```bash
+cd runs/simple_YYYYmmdd_HHMMSS
+./rwddt-run up
+```
+
+> Tip: Structured Mode is still the best choice for collaboration and consistent shared host layout; Simple Mode persistence is intended for quick, self-contained experiments.
+
+---
+
 ## 2) Start the container
 
 Change into the run directory and start:
@@ -152,7 +192,7 @@ If the URL/token doesn’t appear immediately, wait ~5–15 seconds and run `./r
 
 ### Remote host port-forwarding
 
-If Docker is running on a remote host, you'll need to setup ssh-based port forwarding using the
+If Docker is running on a remote host, you'll need to set up SSH-based port forwarding using the
 command provided in the Docker logs that will look something like:
 
 ```bash
@@ -179,17 +219,26 @@ Keep that terminal open while you use JupyterLab; type `exit` to close the tunne
 
 ---
 
+## Optional environment overrides
+
+These can be set in your shell before running `./rwddt-run up`:
+
+- `IMAGE` — override which container image to run (useful for local builds).
+- `CRDS_MODE=remote` — run without requiring a local CRDS cache directory on the host (uses the CRDS server).
+
+---
+
 ## Troubleshooting
 
 - **No URL printed yet:** wait a few seconds and re-run `./rwddt-run logs`.
-- **Permission denied writing files:** ensure your `<analyst>` directory is writable by your user (and group, if applicable).
+- **Permission denied writing files:** ensure your `<analyst>` directory is writable by your host user (and group, if applicable).
 - **Two datasets at once:** each dataset gets its own run directory under `runs/`; start each from its own run directory.
 
 ---
 
 ## Notes (inside the container)
 
-| Container Path             | Purpose                                           |
+| Container Path              | Purpose                                           |
 |----------------------------|---------------------------------------------------|
 | `/home/rwddt/notebooks/`   | Editable notebooks                                |
 | `/home/rwddt/analysis/`    | Analyst writable area                             |
@@ -201,3 +250,4 @@ Keep that terminal open while you use JupyterLab; type `exit` to close the tunne
 ## Support
 
 If you encounter issues, please contact the RW-DDT JWST Data Analysis team lead (Taylor Bell; @taylorbell57).
+
