@@ -28,18 +28,29 @@ RUN apt-get update && \
         build-essential git curl ca-certificates libnss-wrapper htop tmux && \
     rm -rf /var/lib/apt/lists/*
 
-# Friendly prompt for interactive shells
-RUN printf '%s\n' \
-  'if [ -n "$PS1" ]; then' \
-  '  export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
-  'fi' \
-  > /etc/profile.d/99-ps1.sh
+# -------------------------------------------------------------------
+# Static configuration files (tracked in repo under etc/)
+# -------------------------------------------------------------------
 
-RUN printf "%s\n" \
-  'export PROMPT_DIRTRIM=2' \
-  'export PS1="[\[\e[32m\]\u\[\e[0m\]@\[\e[34m\]\h\[\e[0m\] \[\e[33m\]\W\[\e[0m\]]$ "' \
-  >> /home/rwddt/.bashrc && \
-  chown rwddt:rwddt /home/rwddt/.bashrc
+# Global interactive shell prompt
+COPY etc/profile.d/99-ps1.sh /etc/profile.d/99-ps1.sh
+
+# Append bashrc defaults for rwddt user
+COPY etc/skel/rwddt.bashrc.append /tmp/rwddt.bashrc.append
+RUN cat /tmp/rwddt.bashrc.append >> /home/rwddt/.bashrc && \
+    chown rwddt:rwddt /home/rwddt/.bashrc && \
+    rm -f /tmp/rwddt.bashrc.append
+
+# tmux defaults (optional but recommended)
+COPY etc/tmux/tmux.conf /etc/tmux.conf
+
+# Jupyter Server config (global)
+RUN mkdir -p /etc/jupyter
+COPY etc/jupyter/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
+
+# JupyterLab defaults (system-wide)
+RUN mkdir -p /opt/conda/share/jupyter/lab/settings
+COPY etc/jupyter/lab/overrides.json /opt/conda/share/jupyter/lab/settings/overrides.json
 
 # Pre-create user dirs and make them writable for any runtime UID/GID
 RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
@@ -47,15 +58,6 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
              /home/rwddt/.local/share/jupyter \
              /home/rwddt/.config && \
     chmod -R 0777 /home/rwddt/.jupyter /home/rwddt/.local /home/rwddt/.config
-
-# Jupyter Server 2.x config, placed in a global location
-RUN mkdir -p /etc/jupyter
-COPY etc/docker/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
-
-# JupyterLab default settings: autosave every 60 seconds
-RUN mkdir -p /opt/conda/share/jupyter/lab/settings && \
-    printf '{\n  \"@jupyterlab/docmanager-extension:plugin\": {\n    \"autosaveInterval\": 60000\n  }\n}\n' \
-      > /opt/conda/share/jupyter/lab/settings/overrides.json
 
 # Install Python and Eureka (no pip cache stored during build)
 RUN mamba install -y -c conda-forge python=3.13 && \
@@ -92,7 +94,7 @@ ENV CONDA_ENV=base
 # Make sure /home/rwddt is accessible by the external user's UID/GID
 RUN chmod 1777 /home/rwddt
 
-# Ports and volumes
+# Ports
 EXPOSE 8888
 
 # Copy entrypoint
