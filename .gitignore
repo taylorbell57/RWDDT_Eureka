@@ -49,7 +49,7 @@ docker-compose.yml
 # If you want broader ignore patterns, explicitly keep the template:
 docker-compose.*.yml
 !templates/docker-compose.template.yml
-!templates/docker-compose.simple.template.ym
+!templates/docker-compose.simple.template.yml
 
 # Local data and mounted volumes (do not track user-generated results)
 data/
