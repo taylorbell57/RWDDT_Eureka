@@ -57,7 +57,7 @@ jobs:
           sleep 30
 
           # Confirm the entrypoint printed the access URL line
-          ./rwddt-run logs | grep -m 1 -E "Access URL: http://localhost:[0-9]+/\\?token=" >/dev/null
+          timeout 120s ./rwddt-run logs | grep -m 1 -E 'Access URL: http://localhost:[0-9]+/\?token=' >/dev/null
 
           # Stop the stack cleanly (trap also covers failures)
           ./rwddt-run down
