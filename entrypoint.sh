@@ -67,10 +67,6 @@ ANALYST="${ANALYST:-}"
 HOST_PORT="${HOST_PORT:-8888}"   # used for the log line only; container binds 8888
 CONDA_ENV="${CONDA_ENV:-base}"
 
-# In "mount only what you need" mode, /mnt/rwddt itself may not be a mount.
-# Create mountpoint scaffolding so path checks and symlinks behave predictably.
-mkdir -p /mnt/rwddt/JWST || true
-
 # Community-friendly defaults: if not provided, fall back to a simple workspace
 if [[ -z "$PLANET" || -z "$VISIT" || -z "$ANALYST" ]]; then
   if [[ "$SIMPLE_MODE" = "1" ]]; then

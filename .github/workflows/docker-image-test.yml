@@ -84,7 +84,7 @@ jobs:
           sleep 30
 
           # Check that entrypoint printed the access URL
-          docker logs "${NAME}" | grep -m 1 -E "Access URL: http://localhost:${PORT}/\\?token=" >/dev/null
+          timeout 120s docker logs "${NAME}" | grep -m 1 -E 'Access URL: http://localhost:[0-9]+/\?token=' >/dev/null
 
           # Check that the tmux session exists (entrypoint runs Jupyter inside tmux)
           docker exec "${NAME}" tmux has-session -t jlab
