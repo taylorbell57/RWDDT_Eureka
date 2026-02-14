@@ -57,7 +57,7 @@ jobs:
           sleep 30
 
           # Confirm the entrypoint printed the access URL line
-          ./rwddt-run logs | grep -E "Access URL: http://localhost:[0-9]+/\\?token=" >/dev/null
+          ./rwddt-run logs | grep -m 1 -E "Access URL: http://localhost:[0-9]+/\\?token=" >/dev/null
 
           # Stop the stack cleanly (trap also covers failures)
           ./rwddt-run down
@@ -84,7 +84,7 @@ jobs:
           sleep 30
 
           # Check that entrypoint printed the access URL
-          docker logs "${NAME}" | grep -E "Access URL: http://localhost:${PORT}/\\?token=" >/dev/null
+          docker logs "${NAME}" | grep -m 1 -E "Access URL: http://localhost:${PORT}/\\?token=" >/dev/null
 
           # Check that the tmux session exists (entrypoint runs Jupyter inside tmux)
           docker exec "${NAME}" tmux has-session -t jlab
