@@ -6,7 +6,19 @@ name: <project_name>
 
 services:
   rwddt_eureka:
+    # Prefer a tagged image for reproducibility; override via IMAGE env if desired
     image: ${IMAGE:-tbell664/rwddt_eureka:latest}
+
+    # For local development (uncomment to build locally instead of pulling):
+    # build:
+    #   context: .
+    #   args:
+    #     NB_UID: ${UID:-1000}
+    #     NB_GID: ${GID:-1000}
+    #     EUREKA_REF: ${EUREKA_REF:-3a67244}
+    #     NOTEBOOKS_REPO: ${NOTEBOOKS_REPO:-https://github.com/taylorbell57/rocky-worlds-notebooks.git}
+    #     NOTEBOOKS_REF: ${NOTEBOOKS_REF:-3c97fa5}
+    #     INCLUDE_NOTEBOOKS: ${INCLUDE_NOTEBOOKS:-true}
 
     init: true
     stop_signal: SIGINT
