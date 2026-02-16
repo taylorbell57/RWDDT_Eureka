@@ -86,7 +86,7 @@ uncomment_volume_line_for_placeholder() {
   local file="$1"
   local key="$2"
   sed -i.bak -E \
-    -e "s|^([[:space:]]*)#([[:space:]]*-[[:space:]]*<${key}>:)|\1\2|" \
+    -e "s|^([[:space:]]*)#[[:space:]]*(-[[:space:]]*<${key}>:)|\\1\\2|" \
     "$file"
 }
 
@@ -228,13 +228,13 @@ if [[ "$MODE" == "structured" ]]; then
   MAST_STAGE1_DIR="$BASE_VISIT_DIR/MAST_Stage1"
   UNCAL_DIR="$BASE_VISIT_DIR/Uncalibrated"
 
-  # Create ONLY analyst tree
-  if command -v install >/dev/null 2>&1; then
-    install -d -m 2700 -g "$ANALYST_GID" "$ANALYSIS_DIR" "$NOTEBOOKS_DIR"
-  else
-    mkdir -p "$NOTEBOOKS_DIR"
-    chmod 2700 "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" || true
-  fi
+  # Create analyst notebooks directory (creates ANALYSIS_DIR as needed)
+  mkdir -p "$NOTEBOOKS_DIR"
+
+  # Ensure minimum perms (add-only; never reduces existing perms)
+  chmod u+rwx "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" 2>/dev/null || true
+  chmod g+s "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" 2>/dev/null || true
+  chmod o+x  "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" 2>/dev/null || true
 else
   TS="$(date +%Y%m%d_%H%M%S)"
   DATASET_SAFE="simple_${TS}"
