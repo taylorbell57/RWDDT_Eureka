@@ -1,10 +1,13 @@
-# Template for RW-DDT Jupyter container
-# Replace <project_name>, <analysis_dir_host>, <mast_stage1_host>, <uncalibrated_host>,
-# <planet>, <visit>, <analyst>, <uid>, <gid>, <hostport>,
-# <crds_dir>, <crds_target>, <crds_bind_mode>, and <crds_path>.
+# Template for RW-DDT Jupyter container (CHECKPOINT MODE)
+# Replace:
+#   <project_name>, <checkpoint_dir_host>, <planet>, <checkpoint>, <analyst>,
+#   <uid>, <gid>, <hostport>,
+#   <crds_dir>, <crds_target>, <crds_bind_mode>, <crds_path>.
 #
-# Note: <visit> should be the visit directory name (e.g., "visit12").
-# Do not commit this file after filling in paths. Keep user-specific versions local.
+# Visit mounts are injected by configure_docker_compose.sh at the marker:
+#   # __VISIT_ROOT_MOUNTS__
+#
+# Do not commit generated docker-compose.yml files; they contain local absolute paths.
 
 # IMPORTANT:
 # Compose isolates resources by "project name". Since multiple analysts may run on a shared host,
@@ -38,14 +41,11 @@ services:
       - "<hostport>:8888"
 
     volumes:
-      # Analyst folder (RW)
-      - <analysis_dir_host>:/mnt/rwddt/JWST/<planet>/<visit>/<analyst>:rw
+      # Checkpoint analyst folder (RW)
+      - <checkpoint_dir_host>:/mnt/rwddt/JWST/<planet>/<checkpoint>/<analyst>:rw
 
-      # Optional shared Stage 1 inputs (RO) — uncomment ONLY if host dir exists
-      # - <mast_stage1_host>:/mnt/rwddt/JWST/<planet>/<visit>/MAST_Stage1:ro
-
-      # Optional shared Stage 0 inputs (RO) — uncomment ONLY if host dir exists
-      # - <uncalibrated_host>:/mnt/rwddt/JWST/<planet>/<visit>/Uncalibrated:ro
+      # Read-only mounts for visit roots (injected by script)
+      # __VISIT_ROOT_MOUNTS__
 
       # CRDS mount
       #   split layout:  <crds_dir>:/grp/crds:ro
@@ -61,11 +61,11 @@ services:
     environment:
       TZ: ${TZ:-UTC}
 
-      # Structured mode by default
-      SIMPLE_MODE: ${SIMPLE_MODE:-0}
+      # Force non-simple workspace
+      SIMPLE_MODE: "0"
 
-      # Explicitly force non-checkpoint behavior in structured mode
-      CHECKPOINT_MODE: "0"
+      # Enable checkpoint behavior in entrypoint.sh
+      CHECKPOINT_MODE: "1"
 
       # CRDS settings:
       CRDS_MODE: ${CRDS_MODE:-local}
@@ -77,8 +77,14 @@ services:
       HOST_PORT: <hostport>
 
       PLANET: "<planet>"
-      VISIT: "<visit>"
+      CHECKPOINT: "<checkpoint>"
       ANALYST: "<analyst>"
+
+      # VISIT intentionally blank in checkpoint mode
+      VISIT: ""
+
+      # Optional informational field (left empty unless you decide to inject it)
+      VISITS_CSV: ${VISITS_CSV:-}
 
     restart: unless-stopped
 

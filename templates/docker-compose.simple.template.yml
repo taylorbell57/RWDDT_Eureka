@@ -40,6 +40,9 @@ services:
       # Force Simple Mode workspace inside container
       SIMPLE_MODE: "1"
 
+      # Explicitly force non-checkpoint behavior in simple mode
+      CHECKPOINT_MODE: "0"
+
       CRDS_MODE: ${CRDS_MODE:-local}
       CRDS_PATH: ${CRDS_PATH:-<crds_path>}
 
