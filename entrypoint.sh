@@ -5,6 +5,11 @@ umask 0002
 # Allow opting out of strict workspace requirements for community use
 SIMPLE_MODE="${SIMPLE_MODE:-0}"
 
+# Checkpoint mode (joint fit)
+CHECKPOINT_MODE="${CHECKPOINT_MODE:-0}"   # "1" enables checkpoint behavior
+CHECKPOINT="${CHECKPOINT:-}"             # required when CHECKPOINT_MODE=1
+VISITS_CSV="${VISITS_CSV:-}"             # optional (for informational logging)
+
 # --- Make the current UID/GID resolvable (fixes "I have no name!")
 CUR_UID="$(id -u)"
 CUR_GID="$(id -g)"
@@ -52,7 +57,7 @@ check_folder() {
 safe_link() {
   local src="$1"
   local dst="$2"
-  if [ -e "$dst" ] || [ -L "$dst" ]; then
+  if [[ -e "$dst" || -L "$dst" ]]; then
     rm -rf "$dst"
   fi
   ln -s "$src" "$dst"
@@ -67,8 +72,16 @@ ANALYST="${ANALYST:-}"
 HOST_PORT="${HOST_PORT:-8888}"   # used for the log line only; container binds 8888
 CONDA_ENV="${CONDA_ENV:-base}"
 
-# Community-friendly defaults: if not provided, fall back to a simple workspace
-if [[ -z "$PLANET" || -z "$VISIT" || -z "$ANALYST" ]]; then
+# Normalize mode relationships:
+if [[ "$SIMPLE_MODE" = "1" && "$CHECKPOINT_MODE" = "1" ]]; then
+  echo "Warning: SIMPLE_MODE=1 and CHECKPOINT_MODE=1 both set; SIMPLE_MODE wins." >&2
+  CHECKPOINT_MODE="0"
+fi
+
+# Establish BASE_PATH:
+# - structured:  /mnt/rwddt/JWST/<planet>/<visit>
+# - checkpoint:  /mnt/rwddt/JWST/<planet>/<checkpoint>
+if [[ -z "$PLANET" || -z "$ANALYST" ]]; then
   if [[ "$SIMPLE_MODE" = "1" ]]; then
     echo "SIMPLE_MODE=1 -> Using a generic workspace under /home/rwddt/work"
     mkdir -p /home/rwddt/work/notebooks
@@ -77,56 +90,104 @@ if [[ -z "$PLANET" || -z "$VISIT" || -z "$ANALYST" ]]; then
     : "${VISIT:=visit}"
     : "${ANALYST:=analyst}"
   else
-    die "Missing PLANET/VISIT/ANALYST env vars. Set SIMPLE_MODE=1 to use a local workspace."
+    die "Missing PLANET/ANALYST env vars. Set SIMPLE_MODE=1 to use a local workspace."
   fi
 else
-  BASE_PATH="/mnt/rwddt/JWST/${PLANET}/${VISIT}"
+  if [[ "$CHECKPOINT_MODE" = "1" ]]; then
+    [[ -n "$CHECKPOINT" ]] || die "CHECKPOINT_MODE=1 requires CHECKPOINT env var to be set."
+    BASE_PATH="/mnt/rwddt/JWST/${PLANET}/${CHECKPOINT}"
+  else
+    [[ -n "$VISIT" ]] || die "Structured mode requires VISIT env var (or set SIMPLE_MODE=1)."
+    BASE_PATH="/mnt/rwddt/JWST/${PLANET}/${VISIT}"
+  fi
 fi
 
-# Ensure required mounts/paths exist (structured mode only)
-if [[ "$SIMPLE_MODE" != "1" ]]; then
-  # Do NOT require the visit root to be mounted. We mount only specific subdirs.
-  # Create the visit directory path as a scaffold (harmless if already present).
-  mkdir -p "$BASE_PATH" || true
+# Ensure mount root exists (scaffold only; harmless if already present)
+mkdir -p /mnt/rwddt/JWST || true
+mkdir -p /home/rwddt || true
 
-  # The analyst directory must exist (it should be provided by the RW mount).
-  check_folder "${BASE_PATH}/${ANALYST}" "analyst folder mount"
-fi
+# ---------- Canonical /home/rwddt structure ----------
+# Structured mode expects:
+#   /home/rwddt/analysis
+#   /home/rwddt/notebooks
+#   /home/rwddt/MAST_Stage1
+#   /home/rwddt/Uncalibrated
+#
+# Checkpoint mode expects:
+#   /home/rwddt/analysis
+#   /home/rwddt/notebooks
+#   /home/rwddt/visits
+# and does NOT create MAST_Stage1/Uncalibrated.
 
 # ---------- link the working dirs safely ----------
 if [[ "$SIMPLE_MODE" = "1" ]]; then
+  # Simple mode: create canonical dirs locally (keeps older assumptions happy)
   mkdir -p /home/rwddt/analysis /home/rwddt/notebooks /home/rwddt/MAST_Stage1 /home/rwddt/Uncalibrated
 else
-  # Always link analysis + notebooks (analyst folder is mounted RW)
+  # Non-simple: analyst dir must exist (provided by RW mount)
+  mkdir -p "$BASE_PATH" || true
+  check_folder "${BASE_PATH}/${ANALYST}" "analyst folder mount"
+
+  # Link analysis + notebooks to the writable workspace
   safe_link "${BASE_PATH}/${ANALYST}" /home/rwddt/analysis
   safe_link "${BASE_PATH}/${ANALYST}/notebooks" /home/rwddt/notebooks
 
-  # Optional shared inputs:
-  # If they are mounted, link to them; otherwise keep empty directories so notebooks see stable paths.
-  if [[ -d "${BASE_PATH}/MAST_Stage1" ]]; then
-    safe_link "${BASE_PATH}/MAST_Stage1" /home/rwddt/MAST_Stage1
-  else
-    mkdir -p /home/rwddt/MAST_Stage1
-  fi
+  if [[ "$CHECKPOINT_MODE" = "1" ]]; then
+    # Provide a tidy portal to all visits under this planet:
+    mkdir -p "/mnt/rwddt/JWST/${PLANET}" || true
+    safe_link "/mnt/rwddt/JWST/${PLANET}" /home/rwddt/visits
 
-  if [[ -d "${BASE_PATH}/Uncalibrated" ]]; then
-    safe_link "${BASE_PATH}/Uncalibrated" /home/rwddt/Uncalibrated
+    # IMPORTANT: do NOT create /home/rwddt/MAST_Stage1 or /home/rwddt/Uncalibrated in checkpoint mode.
+    # Also, if they happen to exist in the image or from a prior container run, remove them to keep home tidy.
+    rm -rf /home/rwddt/MAST_Stage1 /home/rwddt/Uncalibrated 2>/dev/null || true
   else
-    mkdir -p /home/rwddt/Uncalibrated
+    # Structured mode: link shared inputs if present; else keep empty dirs
+    if [[ -d "${BASE_PATH}/MAST_Stage1" ]]; then
+      safe_link "${BASE_PATH}/MAST_Stage1" /home/rwddt/MAST_Stage1
+    else
+      mkdir -p /home/rwddt/MAST_Stage1
+    fi
+
+    if [[ -d "${BASE_PATH}/Uncalibrated" ]]; then
+      safe_link "${BASE_PATH}/Uncalibrated" /home/rwddt/Uncalibrated
+    else
+      mkdir -p /home/rwddt/Uncalibrated
+    fi
   fi
 fi
+
 
 echo "------------------------------------------------------------"
 echo " Verifying required volume mounts..."
 echo "------------------------------------------------------------"
 echo "Running as: $(id)"
-echo "PLANET=${PLANET}  VISIT=${VISIT}  ANALYST=${ANALYST}"
+echo "SIMPLE_MODE=${SIMPLE_MODE}  CHECKPOINT_MODE=${CHECKPOINT_MODE}"
+if [[ "$CHECKPOINT_MODE" = "1" && "$SIMPLE_MODE" != "1" ]]; then
+  echo "PLANET=${PLANET}  CHECKPOINT=${CHECKPOINT}  ANALYST=${ANALYST}"
+  if [[ -n "$VISITS_CSV" ]]; then
+    echo "VISITS_CSV=${VISITS_CSV}"
+  fi
+else
+  echo "PLANET=${PLANET}  VISIT=${VISIT:-}  ANALYST=${ANALYST}"
+fi
+echo "Resolved analysis  -> $(readlink -f /home/rwddt/analysis || true)"
 echo "Resolved notebooks -> $(readlink -f /home/rwddt/notebooks || true)"
+if [[ "$CHECKPOINT_MODE" = "1" && "$SIMPLE_MODE" != "1" ]]; then
+  echo "Resolved visits    -> $(readlink -f /home/rwddt/visits || true)"
+fi
 
 check_folder /home/rwddt/notebooks "notebooks"
 check_folder /home/rwddt/analysis "analysis"
-check_folder /home/rwddt/MAST_Stage1 "MAST Stage1" warn
-check_folder /home/rwddt/Uncalibrated "Uncalibrated" warn
+
+# Only verify Stage1/Uncalibrated paths in structured or simple mode (NOT checkpoint).
+if [[ "$CHECKPOINT_MODE" != "1" ]]; then
+  check_folder /home/rwddt/MAST_Stage1 "MAST Stage1" warn
+  check_folder /home/rwddt/Uncalibrated "Uncalibrated" warn
+fi
+
+if [[ "$CHECKPOINT_MODE" = "1" && "$SIMPLE_MODE" != "1" ]]; then
+  check_folder /home/rwddt/visits "visits"
+fi
 
 # CRDS handling:
 # - If CRDS_MODE=local, require CRDS_PATH to exist (could be /grp/crds/cache or /crds).
@@ -147,8 +208,8 @@ export CRDS_PATH
 export CRDS_SERVER_URL="${CRDS_SERVER_URL:-https://jwst-crds.stsci.edu}"
 
 # ---------- seed default notebooks (only if empty and writable) ----------
-if [ -d /opt/default_notebooks ] && [ -w /home/rwddt/notebooks ]; then
-  if [ -z "$(ls -A /home/rwddt/notebooks 2>/dev/null)" ]; then
+if [[ -d /opt/default_notebooks && -w /home/rwddt/notebooks ]]; then
+  if [[ -z "$(ls -A /home/rwddt/notebooks 2>/dev/null)" ]]; then
     cp -r /opt/default_notebooks/* /home/rwddt/notebooks/ || true
   fi
 fi
@@ -159,7 +220,7 @@ GREEN='\033[0;32m'; NC='\033[0m'
 # Activate conda
 eval "$(conda shell.bash hook)"
 export CONDA_CHANGEPS1=no
-conda activate "$CONDA_ENV"
+conda activate "${CONDA_ENV}"
 
 # Final prompt in terminals: [user@host cwd]$
 # Use \u to respect NSS wrapper username; \W shows only the leaf dir (e.g. notebooks)
@@ -215,3 +276,4 @@ echo "Detach from tmux with Ctrl-b then d."
 while tmux has-session -t "$SESSION" 2>/dev/null; do
   sleep 5
 done
+
