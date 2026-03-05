@@ -548,4 +548,27 @@ if [[ "$MODE" == "structured" ]]; then
   echo
   echo "Structured dataset:"
   echo "  planet  = \"$PLANET\""
+  echo "  visit   = \"$VISIT\""
+  echo "  analyst = \"$ANALYST\""
+elif [[ "$MODE" == "checkpoint" ]]; then
+  echo
+  echo "Checkpoint dataset:"
+  echo "  planet     = \"$PLANET\""
+  echo "  checkpoint = \"$CHECKPOINT\""
+  echo "  analyst    = \"$ANALYST\""
+  echo "  max_visit  = \"$MAX_VISIT_NUM\""
+  echo "  mounted    = \"$MOUNTED_VISITS_CSV\""
+  echo "  checkpointRW = \"$CHECKPOINT_ANALYSIS_DIR\""
+fi
+
+echo
+echo -e "${GREEN}Next steps:${NC}"
+echo "  cd \"$RUN_DIR\""
+echo "  ./$WRAPPER up"
+echo "  ./$WRAPPER logs   # shows Jupyter URL + token"
+echo "                     # (If it looks empty at first, wait ~5–15 seconds and run it again.)"
+echo "  ./$WRAPPER url    # prints ssh port-forward helper"
+echo
+echo "If you need to update the Docker image to a new version:"
+echo "  ./$WRAPPER update # pull latest image + recreate"
 
