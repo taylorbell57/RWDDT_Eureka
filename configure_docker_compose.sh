@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+umask 002
 
 # -----------------------------------------------------------------------------
 # configure_docker_compose.sh
@@ -21,6 +22,9 @@ set -euo pipefail
 #   - Mounts visit roots read-only for visit1..visit<max_visit_num> (skips missing with warning)
 #   - Creates a new checkpoint folder (RW) at:
 #       <rootdir>/JWST/<planet>/<checkpoint>/<analyst>
+#
+# Optional:
+#   --force  Overwrite generated files inside the run directory if they already exist.
 #
 # Outputs a run directory under:
 #   runs/<planet>_<visit>/                     (structured)
@@ -67,7 +71,7 @@ usage() {
   cat <<'USAGE'
 Usage:
   Structured mode (recommended):
-    ./configure_docker_compose.sh <rootdir> <planet> <visit_num> <analyst> [<crds_dir>] [split|single]
+    ./configure_docker_compose.sh [--force] <rootdir> <planet> <visit_num> <analyst> [<crds_dir>] [split|single]
 
     Notes:
       - <visit_num> must be an integer (e.g. 12). For backward compatibility also accepts:
@@ -75,10 +79,10 @@ Usage:
         and will normalize to: visit12 (no zero padding).
 
   Simple mode (quick tests; no required host structure; no persistence by default):
-    ./configure_docker_compose.sh --simple [<crds_dir>] [split|single]
+    ./configure_docker_compose.sh --simple [--force] [<crds_dir>] [split|single]
 
   Checkpoint mode (joint Stage 5 using multiple visits' outputs):
-    ./configure_docker_compose.sh --checkpoint <rootdir> <planet> <checkpoint> <analyst> <max_visit_num> \
+    ./configure_docker_compose.sh --checkpoint [--force] <rootdir> <planet> <checkpoint> <analyst> <max_visit_num> \
         [<crds_dir>] [split|single]
 
     Notes:
@@ -93,6 +97,7 @@ CRDS layout:
 
 General:
   - <rootdir> must be an absolute path.
+  - --force overwrites generated files in the run directory (docker-compose.yml/.rwddt_state/rwddt-run).
 USAGE
 }
 
@@ -112,7 +117,6 @@ normalize_visit() {
 
   # Force base-10 parse to drop leading zeros safely
   num=$((10#$num))
-
   if (( num < 1 )); then
     echo "Error: visit number must be >= 1 (got '$num')." >&2
     exit 1
@@ -123,7 +127,7 @@ normalize_visit() {
 }
 
 escape_sed_repl() {
-  # Escape characters that are special in sed replacement:
+  # Escape special characters in sed replacement:
   # - '&' expands to the match
   # - '\' starts escape sequences
   # - '|' is our chosen delimiter
@@ -155,11 +159,51 @@ ensure_templates_exist() {
   local files=("$@")
   local f
   for f in "${files[@]}"; do
-    if [ ! -f "$f" ]; then
+    if [[ ! -f "$f" ]]; then
       echo "Error: required template not found for mode '${mode}': $f" >&2
       exit 1
     fi
   done
+}
+
+# Derive a shared group name from ROOTDIR (without hard-coding any group name).
+# We use ROOTDIR's group owner as the "shared" group.
+get_rootdir_group_name() {
+  local rootdir="$1"
+  local g=""
+  g="$(stat -c '%G' "$rootdir" 2>/dev/null || true)"
+  [[ -n "$g" && "$g" != "UNKNOWN" ]] && printf '%s' "$g" || return 1
+}
+
+# Resolve a group name to GID (portable-ish)
+gid_of_group() {
+  local gname="$1"
+  getent group "$gname" 2>/dev/null | awk -F: '{print $3}' | head -n1
+}
+
+# Make generated files safe for shared hosts where docker is run via sudo/root-squash:
+# - ensure readable compose/state
+# - ensure group matches the run directory group (best-effort)
+fix_run_permissions() {
+  local run_dir="$1"
+  local compose_path="$2"
+  local state_path="$3"
+  local wrapper_path="$4"
+
+  # Ensure directory traversal works for sudo/root-squash contexts
+  chmod o+rx "$run_dir" 2>/dev/null || true
+  chmod o+rx "$(dirname "$run_dir")" 2>/dev/null || true
+
+  # Best-effort: set group to match run directory group
+  local run_group=""
+  run_group="$(stat -c '%G' "$run_dir" 2>/dev/null || true)"
+  if [[ -n "$run_group" && "$run_group" != "UNKNOWN" ]]; then
+    chgrp "$run_group" "$compose_path" "$state_path" "$wrapper_path" 2>/dev/null || true
+  fi
+
+  # Critical: ensure compose/state are readable by sudo/root-squash; keep group writable for team usage
+  chmod 664 "$compose_path" "$state_path" 2>/dev/null || true
+  chmod 775 "$wrapper_path" 2>/dev/null || true
 }
 
 # -------- argument parsing --------
@@ -169,6 +213,13 @@ if [[ "${1:-}" == "--simple" ]]; then
   shift || true
 elif [[ "${1:-}" == "--checkpoint" ]]; then
   MODE="checkpoint"
+  shift || true
+fi
+
+# Optional: refuse-to-overwrite guard can be bypassed with --force
+FORCE=0
+if [[ "${1:-}" == "--force" ]]; then
+  FORCE=1
   shift || true
 fi
 
@@ -182,7 +233,7 @@ CRDS_DIR="$CRDS_DIR_DEFAULT"
 CRDS_LAYOUT="$LAYOUT_DEFAULT"
 
 if [[ "$MODE" == "structured" ]]; then
-  if [ "$#" -lt 4 ] || [ "$#" -gt 6 ]; then
+  if [[ "$#" -lt 4 || "$#" -gt 6 ]]; then
     usage
     exit 1
   fi
@@ -201,13 +252,10 @@ if [[ "$MODE" == "structured" ]]; then
     /*) : ;;
     *) echo "Error: <rootdir> must be an absolute path (got '$ROOTDIR')." >&2; exit 1 ;;
   esac
-  if [ ! -d "$ROOTDIR" ]; then
-    echo "Error: <rootdir> '$ROOTDIR' does not exist or is not a directory." >&2
-    exit 1
-  fi
+  [[ -d "$ROOTDIR" ]] || { echo "Error: <rootdir> '$ROOTDIR' does not exist or is not a directory." >&2; exit 1; }
 
   VISIT_ROOT="${ROOTDIR%/}/JWST/${PLANET}/${VISIT}"
-  if [ ! -d "$(dirname "$VISIT_ROOT")" ]; then
+  if [[ ! -d "$(dirname "$VISIT_ROOT")" ]]; then
     echo "Error: Parent directory '$(dirname "$VISIT_ROOT")' does not exist." >&2
     echo "Create $ROOTDIR/JWST/$PLANET first, or fix your arguments." >&2
     exit 1
@@ -217,7 +265,7 @@ if [[ "$MODE" == "structured" ]]; then
     "$STRUCT_TEMPLATE_PATH" "$BANNER_TEMPLATE_PATH" "$WRAPPER_TEMPLATE_PATH"
 
 elif [[ "$MODE" == "simple" ]]; then
-  if [ "$#" -gt 2 ]; then
+  if [[ "$#" -gt 2 ]]; then
     usage
     exit 1
   fi
@@ -233,7 +281,7 @@ elif [[ "$MODE" == "checkpoint" ]]; then
   #   <rootdir> <planet> <checkpoint> <analyst> <max_visit_num>
   # Optional:
   #   [<crds_dir>] [split|single]
-  if [ "$#" -lt 5 ] || [ "$#" -gt 7 ]; then
+  if [[ "$#" -lt 5 || "$#" -gt 7 ]]; then
     usage
     exit 1
   fi
@@ -250,10 +298,7 @@ elif [[ "$MODE" == "checkpoint" ]]; then
     /*) : ;;
     *) echo "Error: <rootdir> must be an absolute path (got '$ROOTDIR')." >&2; exit 1 ;;
   esac
-  if [ ! -d "$ROOTDIR" ]; then
-    echo "Error: <rootdir> '$ROOTDIR' does not exist or is not a directory." >&2
-    exit 1
-  fi
+  [[ -d "$ROOTDIR" ]] || { echo "Error: <rootdir> '$ROOTDIR' does not exist or is not a directory." >&2; exit 1; }
 
   if ! [[ "$MAX_VISIT_RAW" =~ ^[0-9]+$ ]]; then
     echo "Error: <max_visit_num> must be an integer (got '$MAX_VISIT_RAW')." >&2
@@ -266,7 +311,7 @@ elif [[ "$MODE" == "checkpoint" ]]; then
   fi
 
   PLANET_DIR="${ROOTDIR%/}/JWST/${PLANET}"
-  if [ ! -d "$PLANET_DIR" ]; then
+  if [[ ! -d "$PLANET_DIR" ]]; then
     echo "Error: planet directory does not exist: $PLANET_DIR" >&2
     echo "Create $ROOTDIR/JWST/$PLANET first, or fix your arguments." >&2
     exit 1
@@ -284,11 +329,14 @@ fi
 ANALYST_UID="$(id -u)"
 ANALYST_GID="$(id -g)"
 
-# Prefer rwddt group GID in split layout if it exists
-if [ "$CRDS_LAYOUT" = "split" ]; then
-  RWDDT_GID="$(perl -e 'my @g = getgrnam shift; print $g[2] if @g' rwddt)" || true
-  if [[ -n "${RWDDT_GID}" ]]; then
-    ANALYST_GID="${RWDDT_GID}"
+# Prefer a shared group (derived from ROOTDIR) in split layout if possible.
+# This avoids hard-coding any institute-specific group name into a public repo.
+if [[ "$CRDS_LAYOUT" = "split" && -n "$ROOTDIR" ]]; then
+  if ROOT_GNAME="$(get_rootdir_group_name "$ROOTDIR" 2>/dev/null)"; then
+    ROOT_GID="$(gid_of_group "$ROOT_GNAME" || true)"
+    if [[ -n "${ROOT_GID:-}" ]]; then
+      ANALYST_GID="$ROOT_GID"
+    fi
   fi
 fi
 
@@ -311,7 +359,7 @@ case "$CRDS_LAYOUT" in
 esac
 
 # Ensure a local CRDS directory exists for single layout
-if [ "$CRDS_LAYOUT" = "single" ]; then
+if [[ "$CRDS_LAYOUT" = "single" ]]; then
   mkdir -p "${CRDS_DIR}" || true
 fi
 
@@ -334,7 +382,6 @@ HOST_PORT="$(find_free_port)" || { echo "could not find a free port" >&2; exit 1
 
 # -------- naming + run directory --------
 USER_SAFE="$(sanitize "${USER:-unknown}")"
-
 PLANET_SAFE="$(sanitize "${PLANET:-unknown}")"
 
 if [[ "$MODE" == "structured" ]]; then
@@ -351,7 +398,6 @@ if [[ "$MODE" == "structured" ]]; then
   UNCAL_DIR="$BASE_VISIT_DIR/Uncalibrated"
 
   mkdir -p "$NOTEBOOKS_DIR"
-
   # Ensure minimum perms (add-only; never reduces existing perms)
   chmod u+rwx "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" 2>/dev/null || true
   chmod g+s "$ANALYSIS_DIR" "$NOTEBOOKS_DIR" 2>/dev/null || true
@@ -359,6 +405,7 @@ if [[ "$MODE" == "structured" ]]; then
 
 elif [[ "$MODE" == "simple" ]]; then
   TS="$(date +%Y%m%d_%H%M%S)"
+  # Include planet + checkpoint + maxvisit so multiple checkpoints don't collide
   DATASET_SAFE="simple_${TS}"
   RUN_DIR="${RUNS_ROOT}/${DATASET_SAFE}"
   PROJECT_NAME="rwddt_${USER_SAFE}_${DATASET_SAFE}"
@@ -370,7 +417,6 @@ elif [[ "$MODE" == "simple" ]]; then
 
 elif [[ "$MODE" == "checkpoint" ]]; then
   CHECKPOINT_SAFE="$(sanitize "$CHECKPOINT")"
-  # Include planet + checkpoint + maxvisit so multiple checkpoints don't collide
   DATASET_SAFE="${PLANET_SAFE}_${CHECKPOINT_SAFE}_maxvisit${MAX_VISIT_NUM}"
   RUN_DIR="${RUNS_ROOT}/${DATASET_SAFE}"
   PROJECT_NAME="rwddt_${USER_SAFE}_${DATASET_SAFE}"
@@ -383,9 +429,9 @@ elif [[ "$MODE" == "checkpoint" ]]; then
   chmod g+s "$CHECKPOINT_ANALYSIS_DIR" "$NOTEBOOKS_DIR" 2>/dev/null || true
   chmod o+x  "$CHECKPOINT_ANALYSIS_DIR" "$NOTEBOOKS_DIR" 2>/dev/null || true
 
-  ANALYSIS_DIR=""       # not used
-  MAST_STAGE1_DIR=""    # not used
-  UNCAL_DIR=""          # not used
+  ANALYSIS_DIR=""
+  MAST_STAGE1_DIR=""
+  UNCAL_DIR=""
 fi
 
 mkdir -p "$RUN_DIR"
@@ -393,6 +439,16 @@ mkdir -p "$RUN_DIR"
 OUTPUT_PATH="${RUN_DIR}/${OUTPUT_FILE}"
 STATE_PATH="${RUN_DIR}/${STATE_FILE}"
 WRAPPER_PATH="${RUN_DIR}/${WRAPPER}"
+
+# Safety: do not overwrite an existing run's generated outputs unless --force is given
+if [[ "$FORCE" -ne 1 ]]; then
+  if [[ -e "$OUTPUT_PATH" || -e "$STATE_PATH" || -e "$WRAPPER_PATH" ]]; then
+    echo "Error: run outputs already exist in: $RUN_DIR" >&2
+    echo "  Refusing to overwrite existing docker-compose.yml/state/wrapper." >&2
+    echo "  Re-run with --force if you really want to regenerate in-place." >&2
+    exit 1
+  fi
+fi
 
 # -----------------------------------------------------------------------------
 # Generate docker-compose.yml from template (all modes)
@@ -473,7 +529,7 @@ if [[ "$MODE" == "structured" ]]; then
   replace_placeholder "$OUTPUT_PATH" "uncalibrated_host" "$UNCAL_DIR"
 
   replace_placeholder "$OUTPUT_PATH" "planet" "$PLANET"
-  replace_placeholder "$OUTPUT_PATH" "visit" "$VISIT"     # "visit#"
+  replace_placeholder "$OUTPUT_PATH" "visit" "$VISIT"
   replace_placeholder "$OUTPUT_PATH" "analyst" "$ANALYST"
 fi
 
@@ -530,6 +586,9 @@ write_kv() {
 cp "$WRAPPER_TEMPLATE_PATH" "$WRAPPER_PATH"
 chmod +x "$WRAPPER_PATH"
 
+# Fix permissions/group (some sed -i implementations/filesystems can reset perms/group)
+fix_run_permissions "$RUN_DIR" "$OUTPUT_PATH" "$STATE_PATH" "$WRAPPER_PATH"
+
 GREEN='\033[1;32m'; NC='\033[0m'
 echo "Generated run directory: $RUN_DIR"
 echo "  compose  = \"$OUTPUT_PATH\""
@@ -553,11 +612,11 @@ if [[ "$MODE" == "structured" ]]; then
 elif [[ "$MODE" == "checkpoint" ]]; then
   echo
   echo "Checkpoint dataset:"
-  echo "  planet     = \"$PLANET\""
-  echo "  checkpoint = \"$CHECKPOINT\""
-  echo "  analyst    = \"$ANALYST\""
-  echo "  max_visit  = \"$MAX_VISIT_NUM\""
-  echo "  mounted    = \"$MOUNTED_VISITS_CSV\""
+  echo "  planet       = \"$PLANET\""
+  echo "  checkpoint   = \"$CHECKPOINT\""
+  echo "  analyst      = \"$ANALYST\""
+  echo "  max_visit    = \"$MAX_VISIT_NUM\""
+  echo "  mounted      = \"$MOUNTED_VISITS_CSV\""
   echo "  checkpointRW = \"$CHECKPOINT_ANALYSIS_DIR\""
 fi
 

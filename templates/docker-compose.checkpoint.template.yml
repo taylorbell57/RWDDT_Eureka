@@ -4,8 +4,7 @@
 #   <uid>, <gid>, <hostport>,
 #   <crds_dir>, <crds_target>, <crds_bind_mode>, <crds_path>.
 #
-# Visit mounts are injected by configure_docker_compose.sh at the marker:
-#   # __VISIT_ROOT_MOUNTS__
+# Visit mounts are injected by configure_docker_compose.sh
 #
 # Do not commit generated docker-compose.yml files; they contain local absolute paths.
 
