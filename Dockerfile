@@ -13,7 +13,7 @@ WORKDIR /home/rwddt
 ARG DEBIAN_FRONTEND=noninteractive
 ARG EUREKA_REF=3a67244
 ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
-ARG NOTEBOOKS_REF=b26c7fb
+ARG NOTEBOOKS_REF=5c0bd24
 ARG INCLUDE_NOTEBOOKS=true
 
 # Make Python stdout/stderr unbuffered for real-time logs
@@ -62,7 +62,8 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
 # Install Python and Eureka (no pip cache stored during build)
 RUN mamba install -y -c conda-forge python=3.13 && \
     python -m pip install --no-cache-dir \
-      "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}"
+      "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}" \
+      "h5py<3.15"
 
 # Optional example notebooks via sparse checkout
 RUN if [ "${INCLUDE_NOTEBOOKS}" = "true" ]; then \
