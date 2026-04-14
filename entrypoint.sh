@@ -102,9 +102,13 @@ else
   fi
 fi
 
-# Ensure mount root exists (scaffold only; harmless if already present)
-mkdir -p /mnt/rwddt/JWST || true
+# Ensure local home root exists.
 mkdir -p /home/rwddt || true
+
+# Only touch /mnt/rwddt when using mounted workspaces.
+if [[ "$SIMPLE_MODE" != "1" ]]; then
+    mkdir -p /mnt/rwddt/JWST || true
+fi
 
 # ---------- Canonical /home/rwddt structure ----------
 # Structured mode expects:
