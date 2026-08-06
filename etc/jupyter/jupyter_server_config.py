@@ -22,4 +22,3 @@ c.TerminalsWebsocketConnection.websocket_ping_timeout  = 30000
 # Token provided via env; entrypoint exports JUPYTER_TOKEN
 import os
 c.IdentityProvider.token = os.environ.get("JUPYTER_TOKEN", "")
-

@@ -112,4 +112,3 @@ LABEL org.opencontainers.image.title="RW-DDT Eureka! Container" \
       org.opencontainers.image.documentation="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.licenses-url="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/LICENSE"
-
