@@ -11,9 +11,9 @@ WORKDIR /home/rwddt
 
 # Build args for reproducibility and optional notebooks
 ARG DEBIAN_FRONTEND=noninteractive
-ARG EUREKA_REF=86a6c8b
+ARG EUREKA_REF=73f1f21
 ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
-ARG NOTEBOOKS_REF=52ac9c1
+ARG NOTEBOOKS_REF=481c876
 ARG INCLUDE_NOTEBOOKS=true
 
 # Make Python stdout/stderr unbuffered for real-time logs
