@@ -1,0 +1,42 @@
+ci:
+  autofix_prs: true
+  autoupdate_schedule: monthly
+  autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+        exclude: ^templates/rwddt-run\.template\.sh$
+      - id: check-symlinks
+      - id: check-yaml
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: forbid-new-submodules
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: ^\.github/pull_request_template\.md$
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--shell=bash]
+        exclude: ^etc/profile\.d/99-ps1\.sh$
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.4
+    hooks:
+      - id: check-compose-spec
+      - id: check-github-issue-forms
+      - id: check-github-workflows

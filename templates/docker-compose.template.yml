@@ -81,4 +81,3 @@ services:
       ANALYST: "<analyst>"
 
     restart: unless-stopped
-

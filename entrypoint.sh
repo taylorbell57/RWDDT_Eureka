@@ -280,4 +280,3 @@ echo "Detach from tmux with Ctrl-b then d."
 while tmux has-session -t "$SESSION" 2>/dev/null; do
   sleep 5
 done
-

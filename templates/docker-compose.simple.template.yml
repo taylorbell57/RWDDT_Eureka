@@ -55,4 +55,3 @@ services:
       ANALYST: ""
 
     restart: unless-stopped
-
