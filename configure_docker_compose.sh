@@ -628,6 +628,5 @@ echo "  ./$WRAPPER logs   # shows Jupyter URL + token"
 echo "                     # (If it looks empty at first, wait ~5–15 seconds and run it again.)"
 echo "  ./$WRAPPER url    # prints ssh port-forward helper"
 echo
-echo "If you need to update the Docker image to a new version:"
-echo "  ./$WRAPPER update # pull latest image + recreate"
-
+echo "The 'up' command checks for a newer Docker image automatically."
+echo "Use './$WRAPPER update' only to force a fresh container recreation."

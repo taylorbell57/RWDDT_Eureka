@@ -227,6 +227,8 @@ cd runs/<run_name>
 ./rwddt-run up
 ```
 
+`up` checks Docker Hub for a newer image each time. If the image changed, Docker Compose recreates the container from the new image; otherwise it leaves the existing container in place.
+
 Examples:
 
 ```bash
@@ -276,7 +278,7 @@ You can also print a helper snippet with:
 ./rwddt-run exec bash
 ./rwddt-run ps
 ./rwddt-run down
-./rwddt-run update   # pull newest image + recreate
+./rwddt-run update   # pull newest image + force recreation, even if unchanged
 ```
 
 ---
@@ -314,6 +316,7 @@ cd runs/simple_YYYYmmdd_HHMMSS
 Set these in your shell before running `./rwddt-run up`:
 
 - `IMAGE` — override which container image to run (useful for local builds).
+- `RWDDT_PULL_POLICY` — control image pulls for `up`: `always` (default), `missing`, or `never`. Use `never` with an image that exists only in the local Docker image store, or when working offline.
 - `CRDS_MODE=remote` — run without requiring a local CRDS cache directory on the host (uses the CRDS server).
 
 ---
@@ -323,6 +326,7 @@ Set these in your shell before running `./rwddt-run up`:
 - **No URL printed yet:** wait a few seconds and re-run `./rwddt-run logs`.
 - **Permission denied writing files:** ensure your `<analyst>` directory is writable by your host user (and group, if applicable).
 - **Two datasets at once:** each dataset gets its own run directory under `runs/`; start each from its own run directory.
+- **An existing run still does not check for updates:** regenerate its wrapper once with the same configuration command plus `--force`. Newly generated wrappers check automatically.
 
 ---
 
@@ -346,4 +350,3 @@ Set these in your shell before running `./rwddt-run up`:
 ## Support
 
 If you encounter issues, please contact the RW-DDT JWST Data Analysis team lead (Taylor Bell; @taylorbell57).
-
