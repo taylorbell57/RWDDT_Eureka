@@ -34,6 +34,7 @@ Thumbs.db
 *.swo
 *.bak
 *.tmp
+*.code-workspace
 
 # --------------------------------------------------------------------
 # RWDDT local run artifacts (DO NOT COMMIT)
@@ -63,4 +64,3 @@ analysis/
 dist/
 build/
 *.log
-

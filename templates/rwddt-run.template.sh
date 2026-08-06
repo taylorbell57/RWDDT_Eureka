@@ -76,10 +76,18 @@ fi
 # -----------------------------------------------------------------------------
 # Commands
 # -----------------------------------------------------------------------------
+PULL_POLICY="${RWDDT_PULL_POLICY:-always}"
 cmd="${1:-}"; shift || true
 case "$cmd" in
   up)
-    "${DC[@]}" up -d --pull missing
+    case "$PULL_POLICY" in
+      always|missing|never) ;;
+      *)
+        echo "ERROR: RWDDT_PULL_POLICY must be one of: always, missing, never (got '$PULL_POLICY')." >&2
+        exit 1
+        ;;
+    esac
+    "${DC[@]}" up -d --pull "$PULL_POLICY"
     echo "Started: ${PROJECT_NAME}"
     ;;
   update)
@@ -158,16 +166,19 @@ case "$cmd" in
 Usage: ./rwddt-run <command>
 
 Commands:
-  up        Start container (detached), pulls if missing
-  update    Pull newest image + force recreate
+  up        Start container, checking for a newer image by default
+  update    Pull newest image + force recreate (even if unchanged)
   logs      Follow logs (TTY) or print tail (piped)
   url       Show port-forward + URL
   info      Show configuration summary for this run directory
   ps        Status
   exec ...  Run a command inside container (e.g. ./rwddt-run exec bash)
   down      Stop/remove this dataset container
+
+Environment:
+  RWDDT_PULL_POLICY=always|missing|never
+            Image pull behavior for 'up' (default: always)
 USAGE
     exit 1
     ;;
 esac
-
