@@ -17,7 +17,7 @@ services:
     #     NB_GID: ${GID:-1000}
     #     EUREKA_REF: ${EUREKA_REF:-5b9613e}
     #     NOTEBOOKS_REPO: ${NOTEBOOKS_REPO:-https://github.com/taylorbell57/rocky-worlds-notebooks.git}
-    #     NOTEBOOKS_REF: ${NOTEBOOKS_REF:-d5505d6}
+    #     NOTEBOOKS_REF: ${NOTEBOOKS_REF:-f6369b2}
     #     INCLUDE_NOTEBOOKS: ${INCLUDE_NOTEBOOKS:-true}
 
     init: true
