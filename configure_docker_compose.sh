@@ -24,7 +24,10 @@ umask 002
 #       <rootdir>/JWST/<planet>/<checkpoint>/<analyst>
 #
 # Optional:
-#   --force  Overwrite generated files inside the run directory if they already exist.
+#   --force        Overwrite generated files inside the run directory if they already exist.
+#   --build-local  Generate docker-compose.yml to build the image locally instead of pulling
+#                  from Docker Hub. Copies Dockerfile, entrypoint.sh, and etc/ into the run
+#                  directory so the build stays reproducible even if this repo changes later.
 #
 # Outputs a run directory under:
 #   runs/<planet>_<visit>/                     (structured)
@@ -60,6 +63,11 @@ OUTPUT_FILE="docker-compose.yml"
 STATE_FILE=".rwddt_state"
 WRAPPER="rwddt-run"
 
+# Files/dirs needed to build the image locally (relative to SCRIPT_DIR); copied
+# into the run directory with --build-local so the run stays reproducible even
+# if this repo's Dockerfile/etc later change.
+BUILD_CONTEXT_ITEMS=(Dockerfile entrypoint.sh etc)
+
 # -------- helpers --------
 sanitize() {
   echo "$1" \
@@ -71,7 +79,7 @@ usage() {
   cat <<'USAGE'
 Usage:
   Structured mode (recommended):
-    ./configure_docker_compose.sh [--force] <rootdir> <planet> <visit_num> <analyst> [<crds_dir>] [split|single]
+    ./configure_docker_compose.sh [--force] [--build-local] <rootdir> <planet> <visit_num> <analyst> [<crds_dir>] [split|single]
 
     Notes:
       - <visit_num> must be an integer (e.g. 12). For backward compatibility also accepts:
@@ -79,10 +87,10 @@ Usage:
         and will normalize to: visit12 (no zero padding).
 
   Simple mode (quick tests; no required host structure; no persistence by default):
-    ./configure_docker_compose.sh --simple [--force] [<crds_dir>] [split|single]
+    ./configure_docker_compose.sh --simple [--force] [--build-local] [<crds_dir>] [split|single]
 
   Checkpoint mode (joint Stage 5 using multiple visits' outputs):
-    ./configure_docker_compose.sh --checkpoint [--force] <rootdir> <planet> <checkpoint> <analyst> <max_visit_num> \
+    ./configure_docker_compose.sh --checkpoint [--force] [--build-local] <rootdir> <planet> <checkpoint> <analyst> <max_visit_num> \
         [<crds_dir>] [split|single]
 
     Notes:
@@ -98,6 +106,9 @@ CRDS layout:
 General:
   - <rootdir> must be an absolute path.
   - --force overwrites generated files in the run directory (docker-compose.yml/.rwddt_state/rwddt-run).
+  - --build-local switches the generated docker-compose.yml to build the image locally, and copies
+    Dockerfile, entrypoint.sh, and etc/ into the run directory so the build stays reproducible even
+    if this repo is later updated.
 USAGE
 }
 
@@ -151,6 +162,72 @@ uncomment_volume_line_for_placeholder() {
   sed -i.bak -E \
     -e "s|^([[:space:]]*)#[[:space:]]*(-[[:space:]]*<${key}>:)|\\1\\2|" \
     "$file"
+}
+
+# Switch the generated compose file from pulling the Docker Hub image to
+# building it locally: comments out the "image:" line and uncomments the
+# "build:" block (and its nested args) that ships commented-out in the templates.
+enable_local_build() {
+  local file="$1"
+  local tmp
+  tmp="$(mktemp)"
+  awk '
+    {
+      line = $0
+      trigger = (line ~ /^[[:space:]]*#[[:space:]]*build:[[:space:]]*$/)
+      if (in_block || trigger) {
+        if (line ~ /^[[:space:]]*#/) {
+          pos = index(line, "#")
+          before = substr(line, 1, pos - 1)
+          after = substr(line, pos + 1)
+          sub(/^ /, "", after)
+          line = before after
+          in_block = 1
+        } else {
+          in_block = 0
+        }
+      }
+      print line
+    }
+  ' "$file" > "$tmp"
+  mv "$tmp" "$file"
+
+  sed -i.bak -E \
+    -e "s|^([[:space:]]*)(image:.*)|\\1# \\2|" \
+    "$file"
+  rm -f "${file}.bak" 2>/dev/null || true
+}
+
+# Copy the Dockerfile build context into the run directory so it stays stable
+# even if the source repo is later updated (build context is "context: .").
+copy_build_context() {
+  local run_dir="$1"
+  local item src dst
+
+  # Defense in depth: only ever write build-context files under our own runs/ directory.
+  case "$run_dir" in
+    "${RUNS_ROOT}"/*) : ;;
+    *) echo "Error: refusing to write build context outside of $RUNS_ROOT (got '$run_dir')." >&2; exit 1 ;;
+  esac
+
+  for item in "${BUILD_CONTEXT_ITEMS[@]}"; do
+    [[ -n "$item" ]] || continue
+    src="${SCRIPT_DIR}/${item}"
+    dst="${run_dir}/${item}"
+    if [[ ! -e "$src" ]]; then
+      echo "Error: required build-context file/dir not found: $src" >&2
+      exit 1
+    fi
+    # Copy contents in-place (no delete step needed): "src/." avoids nesting
+    # a duplicate directory if dst already exists from a prior --force run.
+    if [[ -d "$src" ]]; then
+      mkdir -p "$dst"
+      cp -R "$src/." "$dst/"
+    else
+      cp -f "$src" "$dst"
+    fi
+    chmod -R go+rX -- "$dst" 2>/dev/null || true
+  done
 }
 
 ensure_templates_exist() {
@@ -216,12 +293,17 @@ elif [[ "${1:-}" == "--checkpoint" ]]; then
   shift || true
 fi
 
-# Optional: refuse-to-overwrite guard can be bypassed with --force
+# Optional flags: refuse-to-overwrite guard can be bypassed with --force;
+# --build-local switches the generated compose file to build the image locally.
 FORCE=0
-if [[ "${1:-}" == "--force" ]]; then
-  FORCE=1
-  shift || true
-fi
+BUILD_LOCAL=0
+while [[ "${1:-}" == "--force" || "${1:-}" == "--build-local" ]]; do
+  case "$1" in
+    --force) FORCE=1 ;;
+    --build-local) BUILD_LOCAL=1 ;;
+  esac
+  shift
+done
 
 CRDS_DIR_DEFAULT="${HOME}/crds_cache"
 LAYOUT_DEFAULT="single"
@@ -448,6 +530,15 @@ if [[ "$FORCE" -ne 1 ]]; then
     echo "  Re-run with --force if you really want to regenerate in-place." >&2
     exit 1
   fi
+  if [[ "$BUILD_LOCAL" -eq 1 ]]; then
+    for item in "${BUILD_CONTEXT_ITEMS[@]}"; do
+      if [[ -e "${RUN_DIR}/${item}" ]]; then
+        echo "Error: build-context path already exists: ${RUN_DIR}/${item}" >&2
+        echo "  Re-run with --force if you really want to regenerate in-place." >&2
+        exit 1
+      fi
+    done
+  fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -463,6 +554,11 @@ fi
 
 # banner + template -> output
 cat "$BANNER_TEMPLATE_PATH" "$TEMPLATE_TO_USE" > "$OUTPUT_PATH"
+
+if [[ "$BUILD_LOCAL" -eq 1 ]]; then
+  enable_local_build "$OUTPUT_PATH"
+  copy_build_context "$RUN_DIR"
+fi
 
 # -----------------------------------------------------------------------------
 # Checkpoint mode: inject RO mounts for visit roots visit1..visitN
@@ -572,6 +668,7 @@ write_kv() {
   write_kv ANALYST "$ANALYST"
   write_kv HOST_PORT "$HOST_PORT"
   write_kv COMPOSE_FILE "$OUTPUT_FILE"
+  write_kv BUILD_LOCAL "$BUILD_LOCAL"
 
   if [[ "$MODE" == "checkpoint" ]]; then
     write_kv CHECKPOINT "$CHECKPOINT"
@@ -602,6 +699,20 @@ echo "  CRDS dir    = \"$CRDS_DIR\""
 echo "  CRDS layout = \"$CRDS_LAYOUT\""
 echo "  CRDS target = \"$CRDS_TARGET\" (container)"
 echo "  CRDS mode   = \"$CRDS_BIND_MODE\""
+if [[ "$BUILD_LOCAL" -eq 1 ]]; then
+  echo "  image       = build locally (Dockerfile in this repo)"
+  echo "  build ctx   = copied into run directory (${BUILD_CONTEXT_ITEMS[*]})"
+else
+  # Extract the default tag baked into the compose file (not hardcoded here) so
+  # this stays accurate if the template's default tag is bumped in the future.
+  DEFAULT_IMAGE_REF="$(sed -nE 's/^[[:space:]]*image:.*\$\{IMAGE:-([^}]*)\}.*/\1/p' "$OUTPUT_PATH" | head -n1)"
+  echo "  image       = pull from Docker Hub: ${IMAGE:-$DEFAULT_IMAGE_REF}"
+  if [[ -n "${IMAGE:-}" ]]; then
+    echo "                (IMAGE env var override active; compose default is $DEFAULT_IMAGE_REF)"
+  else
+    echo "                (override at runtime via: IMAGE=<repo:tag> ./$WRAPPER up)"
+  fi
+fi
 
 if [[ "$MODE" == "structured" ]]; then
   echo
