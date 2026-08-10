@@ -44,6 +44,7 @@ jobs:
 
           # Use the locally built image rather than pulling from DockerHub
           export IMAGE="rwddt_eureka:test"
+          export RWDDT_PULL_POLICY="never"
 
           # Avoid requiring a local CRDS cache for the entrypoint checks
           export CRDS_MODE="remote"
