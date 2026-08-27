@@ -32,6 +32,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ github.run_started_at }}
+            org.opencontainers.image.version=dev-${{ env.SHORT_SHA }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -53,5 +54,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            RWDDT_VERSION=dev-${{ env.SHORT_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true

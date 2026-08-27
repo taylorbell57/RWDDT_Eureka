@@ -13,6 +13,7 @@ services:
     # build:
     #   context: .
     #   args:
+    #     RWDDT_VERSION: ${RWDDT_VERSION:-local}
     #     NB_UID: ${UID:-1000}
     #     NB_GID: ${GID:-1000}
     #     EUREKA_REF: ${EUREKA_REF:-cced4c4}

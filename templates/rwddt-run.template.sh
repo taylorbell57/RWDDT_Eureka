@@ -77,6 +77,60 @@ fi
 # Commands
 # -----------------------------------------------------------------------------
 PULL_POLICY="${RWDDT_PULL_POLICY:-always}"
+
+service_image_ref() {
+  "${DC[@]}" config --images | sed -n '1p'
+}
+
+running_container_id() {
+  "${DC[@]}" ps -q rwddt_eureka
+}
+
+local_image_id() {
+  local image_ref="$1"
+  docker_cmd image inspect --format '{{.Id}}' "$image_ref"
+}
+
+print_running_image() {
+  local container_id image_ref image_id repo_digest metadata
+  local rwddt_version eureka_ref notebooks_ref
+  container_id="$(running_container_id)"
+  if [[ -z "$container_id" ]]; then
+    echo "ERROR: rwddt_eureka container is not running." >&2
+    return 1
+  fi
+
+  image_ref="$(docker_cmd container inspect --format '{{.Config.Image}}' "$container_id")"
+  image_id="$(docker_cmd container inspect --format '{{.Image}}' "$container_id")"
+  repo_digest="$(
+    docker_cmd image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_id" \
+      | sed -n '1p'
+  )"
+  metadata="$(
+    docker_cmd image inspect \
+      --format '{{index .Config.Labels "org.opencontainers.image.version"}}|{{index .Config.Labels "io.github.taylorbell57.rwddt.eureka-ref"}}|{{index .Config.Labels "io.github.taylorbell57.rwddt.notebooks-ref"}}' \
+      "$image_id"
+  )"
+  IFS='|' read -r rwddt_version eureka_ref notebooks_ref <<< "$metadata"
+
+  echo "Image reference: ${image_ref}"
+  # The custom ref labels distinguish current RWDDT metadata from the Ubuntu
+  # version label inherited by images built before RWDDT versioning was added.
+  if [[ -n "$eureka_ref" && "$eureka_ref" != "<no value>" ]]; then
+    echo "RWDDT version:  ${rwddt_version}"
+    echo "Eureka ref:     ${eureka_ref}"
+    echo "Notebooks ref:  ${notebooks_ref}"
+  else
+    echo "RWDDT version:  unavailable (image predates embedded RWDDT metadata)"
+  fi
+  echo "Image ID:        ${image_id}"
+  if [[ -n "$repo_digest" ]]; then
+    echo "Repository digest: ${repo_digest}"
+  else
+    echo "Repository digest: unavailable (expected for some locally built images)"
+  fi
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   up)
@@ -89,10 +143,52 @@ case "$cmd" in
     esac
     "${DC[@]}" up -d --pull "$PULL_POLICY"
     echo "Started: ${PROJECT_NAME}"
+    print_running_image
     ;;
   update)
-    "${DC[@]}" up -d --pull always --force-recreate
-    echo "Updated: ${PROJECT_NAME}"
+    if [[ "${BUILD_LOCAL:-0}" -eq 1 ]]; then
+      echo "Stopping: ${PROJECT_NAME}"
+      "${DC[@]}" down --remove-orphans
+      echo "Rebuilding local image and starting: ${PROJECT_NAME}"
+      "${DC[@]}" up -d --build --pull always --force-recreate
+      echo "Updated: ${PROJECT_NAME}"
+      print_running_image
+    else
+      image_ref="$(service_image_ref)"
+      if [[ -z "$image_ref" ]]; then
+        echo "ERROR: Could not resolve the rwddt_eureka image from ${COMPOSE_FILE}." >&2
+        exit 1
+      fi
+
+      echo "Stopping: ${PROJECT_NAME}"
+      echo "Bind-mounted host files are preserved."
+      "${DC[@]}" down --remove-orphans
+
+      echo "Pulling: ${image_ref}"
+      "${DC[@]}" pull rwddt_eureka
+      expected_image_id="$(local_image_id "$image_ref")"
+      echo "Pulled image ID: ${expected_image_id}"
+
+      # Start the exact image just verified above. Avoid a second pull here so a
+      # mutable tag cannot move between verification and container creation.
+      "${DC[@]}" up -d --pull never --force-recreate
+
+      container_id="$(running_container_id)"
+      if [[ -z "$container_id" ]]; then
+        echo "ERROR: Updated rwddt_eureka container is not running." >&2
+        exit 1
+      fi
+      running_image_id="$(docker_cmd container inspect --format '{{.Image}}' "$container_id")"
+      if [[ "$running_image_id" != "$expected_image_id" ]]; then
+        echo "ERROR: Running image does not match the image that was pulled." >&2
+        echo "  pulled:  ${expected_image_id}" >&2
+        echo "  running: ${running_image_id}" >&2
+        exit 1
+      fi
+
+      echo "Updated and verified: ${PROJECT_NAME}"
+      print_running_image
+    fi
     ;;
   down)
     "${DC[@]}" down --remove-orphans
@@ -167,7 +263,7 @@ Usage: ./rwddt-run <command>
 
 Commands:
   up        Start container, checking for a newer image by default
-  update    Pull newest image + force recreate (even if unchanged)
+  update    Stop, pull/rebuild, relaunch, and verify the running image
   logs      Follow logs (TTY) or print tail (piped)
   url       Show port-forward + URL
   info      Show configuration summary for this run directory
