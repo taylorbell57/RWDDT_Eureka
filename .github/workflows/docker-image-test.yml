@@ -30,6 +30,13 @@ jobs:
           docker run --rm --entrypoint "" rwddt_eureka:test \
             python -c 'import eureka, sys; print(getattr(eureka, "__version__", "unknown"))'
 
+      - name: Smoke test - image metadata is present
+        run: |
+          set -euxo pipefail
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' rwddt_eureka:test)" = "local"
+          test -n "$(docker image inspect --format '{{ index .Config.Labels "io.github.taylorbell57.rwddt.eureka-ref" }}' rwddt_eureka:test)"
+          test -n "$(docker image inspect --format '{{ index .Config.Labels "io.github.taylorbell57.rwddt.notebooks-ref" }}' rwddt_eureka:test)"
+
       - name: Wrapper sanity test (Simple Mode) - configure + rwddt-run up/down
         run: |
           set -euxo pipefail

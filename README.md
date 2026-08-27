@@ -227,7 +227,7 @@ cd runs/<run_name>
 ./rwddt-run up
 ```
 
-`up` checks Docker Hub for a newer image each time. If the image changed, Docker Compose recreates the container from the new image; otherwise it leaves the existing container in place.
+`up` checks Docker Hub for a newer image each time. If the image changed, Docker Compose recreates the container from the new image; otherwise it leaves the existing container in place. After startup, it prints the RWDDT version, pinned Eureka/notebook refs, image reference, immutable image ID, and repository digest (when available), so you can record exactly what is running.
 
 Examples:
 
@@ -278,8 +278,12 @@ You can also print a helper snippet with:
 ./rwddt-run exec bash
 ./rwddt-run ps
 ./rwddt-run down
-./rwddt-run update   # pull newest image + force recreation, even if unchanged
+./rwddt-run update   # stop, pull newest image, relaunch, and verify the image ID
 ```
+
+`update` does not pass `--volumes` to Docker Compose, so bind-mounted host data (including files under `/astro/...`) is preserved. For Docker Hub runs, it records the pulled image's immutable ID and confirms that the relaunched container uses that exact image. For `--build-local` runs, it rebuilds, relaunches, and reports the resulting local image ID.
+
+Release images store the Git release number (without a leading `v`) in the standard `org.opencontainers.image.version` label. They also record the exact source pins in `io.github.taylorbell57.rwddt.eureka-ref` and `io.github.taylorbell57.rwddt.notebooks-ref`. The release workflow derives these values automatically from the pushed Git tag and the Dockerfile build arguments; local builds use `RWDDT_VERSION=local` unless overridden.
 
 ---
 

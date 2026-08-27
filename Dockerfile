@@ -105,10 +105,16 @@ RUN chmod 0755 /home/rwddt/entrypoint.sh
 ENTRYPOINT ["/home/rwddt/entrypoint.sh"]
 
 # Image metadata
+# Release builds override this from the pushed Git tag. Local builds retain an
+# explicit non-release value instead of inheriting the base image's version.
+ARG RWDDT_VERSION=local
 LABEL org.opencontainers.image.title="RW-DDT Eureka! Container" \
       org.opencontainers.image.description="A Jupyter-based Docker environment for RW-DDT data analysis using Eureka!" \
+      org.opencontainers.image.version="${RWDDT_VERSION}" \
       org.opencontainers.image.authors="Taylor James Bell <taylorbell57>" \
       org.opencontainers.image.source="https://github.com/taylorbell57/RWDDT_Eureka" \
       org.opencontainers.image.documentation="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.licenses-url="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/LICENSE"
+      org.opencontainers.image.licenses-url="https://github.com/taylorbell57/RWDDT_Eureka/blob/main/LICENSE" \
+      io.github.taylorbell57.rwddt.eureka-ref="${EUREKA_REF}" \
+      io.github.taylorbell57.rwddt.notebooks-ref="${NOTEBOOKS_REF}"
