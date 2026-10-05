@@ -28,14 +28,14 @@ repos:
         exclude: ^\.github/pull_request_template\.md$
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.11.0.1
+    rev: v0.11.0.1-1
     hooks:
       - id: shellcheck
         args: [--shell=bash]
         exclude: ^etc/profile\.d/99-ps1\.sh$
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.4
+    rev: 0.38.2
     hooks:
       - id: check-compose-spec
       - id: check-github-issue-forms
