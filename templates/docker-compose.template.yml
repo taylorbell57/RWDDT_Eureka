@@ -23,7 +23,7 @@ services:
     #     RWDDT_VERSION: ${RWDDT_VERSION:-local}
     #     NB_UID: ${UID:-1000}
     #     NB_GID: ${GID:-1000}
-    #     EUREKA_REF: ${EUREKA_REF:-222a3ca}
+    #     EUREKA_REF: ${EUREKA_REF:-59e27d2}
     #     NOTEBOOKS_REPO: ${NOTEBOOKS_REPO:-https://github.com/taylorbell57/rocky-worlds-notebooks.git}
     #     NOTEBOOKS_REF: ${NOTEBOOKS_REF:-a2c8763}
     #     INCLUDE_NOTEBOOKS: ${INCLUDE_NOTEBOOKS:-true}
