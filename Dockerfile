@@ -25,7 +25,7 @@ SHELL ["/bin/bash", "-c"]
 # Install base tools in one layer
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential git curl ca-certificates libnss-wrapper htop tmux && \
+        build-essential clang git curl ca-certificates libnss-wrapper htop tmux && \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------------------------------------------
@@ -59,8 +59,16 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
              /home/rwddt/.config && \
     chmod -R 0777 /home/rwddt/.jupyter /home/rwddt/.local /home/rwddt/.config
 
-# Install Python and Eureka (no pip cache stored during build)
+# Install Python and Eureka (no pip cache stored during build).
+# Clang avoids GCC 9's incomplete-type errors in NumPy limited-API builds of
+# photutils and stsci.stimage on Linux ARM64. It is scoped to those packages
+# because clang-built OpenMP extensions that link GCC's libgomp (e.g.,
+# catwoman) fail at import with undefined __kmpc_* symbols. Keep the photutils
+# constraint in sync with Eureka so pip does not rebuild it with GCC below.
 RUN mamba install -y -c conda-forge python=3.13 "ca-certificates<2026.10.18" && \
+    CC=clang CXX=clang++ python -m pip install --no-cache-dir \
+      "photutils<3.1" \
+      stsci.stimage && \
     python -m pip install --no-cache-dir \
       "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}" \
       "h5py>=3.16"
