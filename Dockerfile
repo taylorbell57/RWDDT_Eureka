@@ -11,9 +11,9 @@ WORKDIR /home/rwddt
 
 # Build args for reproducibility and optional notebooks
 ARG DEBIAN_FRONTEND=noninteractive
-ARG EUREKA_REF=cced4c4
+ARG EUREKA_REF=59e27d2
 ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
-ARG NOTEBOOKS_REF=0318d11
+ARG NOTEBOOKS_REF=a2c8763
 ARG INCLUDE_NOTEBOOKS=true
 
 # Make Python stdout/stderr unbuffered for real-time logs
@@ -60,10 +60,10 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
     chmod -R 0777 /home/rwddt/.jupyter /home/rwddt/.local /home/rwddt/.config
 
 # Install Python and Eureka (no pip cache stored during build)
-RUN mamba install -y -c conda-forge python=3.13 && \
+RUN mamba install -y -c conda-forge python=3.13 "ca-certificates<2026.10.18" && \
     python -m pip install --no-cache-dir \
       "eureka-bang[rwddt]@git+https://github.com/kevin218/Eureka.git@${EUREKA_REF}" \
-      "h5py<3.15"
+      "h5py>=3.16"
 
 # Optional example notebooks via sparse checkout
 RUN if [ "${INCLUDE_NOTEBOOKS}" = "true" ]; then \
