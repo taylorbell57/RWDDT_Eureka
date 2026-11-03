@@ -11,9 +11,9 @@ WORKDIR /home/rwddt
 
 # Build args for reproducibility and optional notebooks
 ARG DEBIAN_FRONTEND=noninteractive
-ARG EUREKA_REF=59e27d2
+ARG EUREKA_REF=b927ddd
 ARG NOTEBOOKS_REPO=https://github.com/taylorbell57/rocky-worlds-notebooks.git
-ARG NOTEBOOKS_REF=a2c8763
+ARG NOTEBOOKS_REF=d6f5402
 ARG INCLUDE_NOTEBOOKS=true
 
 # Make Python stdout/stderr unbuffered for real-time logs
@@ -65,7 +65,7 @@ RUN mkdir -p /home/rwddt/.jupyter/lab/workspaces \
 # because clang-built OpenMP extensions that link GCC's libgomp (e.g.,
 # catwoman) fail at import with undefined __kmpc_* symbols. Keep the photutils
 # constraint in sync with Eureka so pip does not rebuild it with GCC below.
-RUN mamba install -y -c conda-forge python=3.13 "ca-certificates<2026.10.18" && \
+RUN mamba install -y -c conda-forge python=3.13 && \
     CC=clang CXX=clang++ python -m pip install --no-cache-dir \
       "photutils<3.1" \
       stsci.stimage && \
